@@ -39,7 +39,7 @@ export class SleepingActivity extends Activity {
 
   override buildPrepare(): Step[] {
     return [
-      { moveTo: { x: getLocation('bed').x, tolerance: 4 }, label: 'hop onto bed' },
+      { moveTo: { x: getLocation('bed').x, tolerance: 4, level: 'upper' }, label: 'hop onto bed' },
       { action: 'sitDown', duration: 0.9, posture: 'sitting', faceDir: 1, face: { emotion: 'tired' }, label: 'sit on bed', thought: 'sleepy' },
       { action: 'lieDown', duration: 1.8, posture: 'lying', face: { emotion: 'tired' }, label: 'lie down', onStart: (env) => { env.agent.lieDir = -1; } },
       { action: 'sleep', duration: 1.2, face: ASLEEP, label: 'close eyes', onStart: (env) => env.sim.bus.emit('sleepStarted') }
@@ -47,7 +47,8 @@ export class SleepingActivity extends Activity {
   }
 
   override buildResume(sim: Simulation): Step[] {
-    return this.buildPrepare().filter((s) => !(s.moveTo && Math.abs(sim.agent.x - s.moveTo.x) < 12));
+    const onBed = sim.agent.level === 'upper';
+    return this.buildPrepare().filter((s) => !(s.moveTo && onBed && Math.abs(sim.agent.x - s.moveTo.x) < 12));
   }
 
   override nextPerformSteps(sim: Simulation, run: ActivityRun): Step[] {

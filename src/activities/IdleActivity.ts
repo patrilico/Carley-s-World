@@ -1,4 +1,6 @@
 import { clamp01 } from '../core/math';
+import { standableX } from '../config/worldLayout';
+import type { Level } from '../core/types';
 import type { Simulation } from '../sim/Simulation';
 import type { Step } from '../systems/StepRunner';
 import { Activity, type ActivityRun } from './Activity';
@@ -9,8 +11,8 @@ interface Micro {
   build: (sim: Simulation) => Step[];
 }
 
-/** Region Carley may wander in for a given zone (floor positions that are never on furniture). */
-const REGION = { indoor: [226, 482] as const, outdoor: [570, 1220] as const };
+/** Region Carley may wander in (floor positions that are never on furniture). */
+const REGION = { ground: [70, 470] as const, upper: [214, 296] as const, outdoor: [570, 1220] as const };
 
 /**
  * Wandering and spontaneous small behaviours - stretching, yawning, humming, tiny dances, looking around...
@@ -59,26 +61,40 @@ export class IdleActivity extends Activity {
     },
     {
       id: 'wander',
-      weight: () => 2.2,
+      // she only potters off on her own in autopilot: otherwise the player decides where she goes
+      weight: (s) => (s.autopilot ? 2.2 : 0),
       build: (s) => {
         const target = this.pickWanderTarget(s);
-        const steps: Step[] = [{ moveTo: { x: target, tolerance: 8 }, label: 'wander', face: { emotion: s.emotion.effective === 'neutral' ? 'happy' : undefined } }];
+        const steps: Step[] = [{ moveTo: { x: target.x, level: target.level, tolerance: 8 }, label: 'wander', face: { emotion: s.emotion.effective === 'neutral' ? 'happy' : undefined } }];
         if (s.rng.chance(0.5)) steps.push({ action: 'lookAround', duration: 2, face: { emotion: 'curious' }, label: 'look around' });
         return steps;
       }
     }
   ];
 
-  pickWanderTarget(sim: Simulation): number {
+  /** Somewhere to potter to: indoors (either floor, via the stairs) or out in the garden. */
+  pickWanderTarget(sim: Simulation): { x: number; level: Level } {
     const wantsIndoor = sim.weather.raining || sim.clock.daylight < 0.25 || sim.character.needs.pain > 30 || sim.mosquitoPressure() > 0.3;
-    let zone = sim.agent.x < 512 ? 'indoor' : 'outdoor';
-    if (wantsIndoor) zone = 'indoor';
-    else if (sim.rng.chance(0.2)) zone = zone === 'indoor' ? 'outdoor' : 'indoor';
-    const [lo, hi] = REGION[zone as 'indoor' | 'outdoor'];
-    return sim.zones.nearestFloorStandX(sim.rng.range(lo, hi));
+    let indoors = sim.agent.x < 512;
+    if (wantsIndoor) indoors = true;
+    else if (sim.rng.chance(0.2)) indoors = !indoors;
+    if (!indoors) return { x: standableX(sim.rng.range(...REGION.outdoor), 'ground'), level: 'ground' };
+    // indoors she sometimes climbs the stairs (tired Carley heads up more often); upstairs she soon comes back down
+    const here = sim.agent.level;
+    const level: Level = here === 'ground'
+      ? (sim.rng.chance(sim.character.needs.energy < 45 ? 0.35 : 0.18) ? 'upper' : 'ground')
+      : (sim.rng.chance(0.3) ? 'ground' : 'upper');
+    const [lo, hi] = REGION[level];
+    return { x: standableX(sim.rng.range(lo, hi), level), level };
   }
 
   override nextPerformSteps(sim: Simulation, run: ActivityRun): Step[] {
+    // never potter about halfway up the staircase: in autopilot she finishes the climb; when the player is steering she
+    // simply stands on her step until they carry on
+    if (sim.agent.plane === 'stairs') {
+      if (!sim.autopilot) return [{ action: 'idle', duration: 3, label: 'stands on the stairs' }];
+      return [{ moveTo: { x: sim.agent.x, level: sim.agent.level, tolerance: 6 }, label: 'finish the stairs' }];
+    }
     const last = run.data.last as string | undefined;
     const choices = this.micros.filter((m) => m.id !== last);
     const m = sim.rng.weighted(choices, (c) => c.weight(sim));

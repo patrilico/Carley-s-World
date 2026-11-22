@@ -27,5 +27,11 @@ export const THOUGHTS: Record<string, string[]> = {
   discovery: ['Look what I found!'],
   sun: ['The sun is back!', 'Hello, sunshine!'],
   moon: ['The stars are out.', 'What a pretty moon.'],
-  hungryForNap: ['A little nap?', 'Nap time...']
+  hungryForNap: ['A little nap?', 'Nap time...'],
+  dogHi: ['Hi, Pongo! One second!', 'I see you, good pup!', 'Be right with you, Pongo!'],
+  dogHero: ['My hero, Pongo!', 'Good boy! Good boy!', 'Pongo caught the bug!', 'Thank you, Pongo!'],
+  dogCall: ['Come here, Pongo!', 'Who wants a cuddle?', 'Pongo! Come!'],
+  dogPet: ['Who is a good pup?', 'Such a soft belly!', 'You are the best!'],
+  dogFetch: ['Want to play fetch?', 'Pongo, go get it!', 'Ready, Pongo?'],
+  dogLove: ['Best dog ever.', 'I love my Pongo.', 'What a good pup!']
 };

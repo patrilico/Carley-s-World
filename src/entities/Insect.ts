@@ -39,7 +39,7 @@ export class Mosquito {
   private wanderAngle: number;
   removed = false;
   /** Set when removed so the manager can report the cause once. */
-  cause: 'swatted' | 'shooed' | 'expired' | null = null;
+  cause: 'swatted' | 'shooed' | 'expired' | 'eaten' | null = null;
   /** Fade/spin used by views for dying/fleeing */
   fade = 1;
 
@@ -62,6 +62,16 @@ export class Mosquito {
     this.cause = 'swatted';
     this.vx *= 0.3;
     this.vy = -30;
+  }
+
+  /** Snapped up by the dog: it just vanishes in a puff (no falling body). */
+  eat(): void {
+    if (this.state === 'dying') return;
+    this.state = 'dying';
+    this.stateTime = 0.4;
+    this.cause = 'eaten';
+    this.vx = 0;
+    this.vy = 0;
   }
 
   shoo(): void {

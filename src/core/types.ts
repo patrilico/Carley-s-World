@@ -2,6 +2,11 @@
 
 export type Zone = 'indoor' | 'outdoor';
 
+/** The two walkable floors of the cottage (the garden is on the ground level too). */
+export type Level = 'ground' | 'upper';
+/** Where a body currently is: on either floor, or on the staircase joining them. */
+export type Plane = 'ground' | 'stairs' | 'upper';
+
 export type ActivityType =
   | 'idle'
   | 'gardening'
@@ -102,6 +107,8 @@ export type PlantVisualState = 'growing' | 'healthy' | 'blooming' | 'dry' | 'wil
 export interface ActivityLocation {
   id: string;
   zone: Zone;
+  /** Which floor the spot is on. */
+  level: Level;
   x: number;
   y: number;
   interactionRadius: number;
@@ -113,7 +120,7 @@ export interface Vec2 {
   y: number;
 }
 
-export type PropId = 'wateringCan' | 'phone' | 'book' | 'brush' | 'milk' | null;
+export type PropId = 'wateringCan' | 'phone' | 'book' | 'brush' | 'milk' | 'ball' | null;
 
 /** Everything the animation layer can be asked to play. */
 export type ActionId =
@@ -135,4 +142,6 @@ export type ActionId =
   | 'read' | 'turnPage' | 'readSurprised'
   | 'phoneRetrieve' | 'phoneTalk' | 'phoneLaugh' | 'phoneEnd'
   | 'paint' | 'paintInspect' | 'paintAdmire' | 'paintFrustrated'
-  | 'sleep' | 'wakeStretch' | 'windowWatch' | 'healed' | 'comfort' | 'takeGlass' | 'drinkMilk';
+  | 'sleep' | 'wakeStretch' | 'windowWatch' | 'healed' | 'comfort' | 'takeGlass' | 'drinkMilk'
+  // the dog
+  | 'callDog' | 'petDog' | 'cuddleDog' | 'openFridge' | 'throwBall';

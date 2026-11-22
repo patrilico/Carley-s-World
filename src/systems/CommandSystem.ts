@@ -8,15 +8,15 @@ export interface CommandDef {
   id: string;
   name: string;
   icon: string;
-  kind: 'activity' | 'milk' | 'love';
+  kind: 'activity' | 'milk' | 'love' | 'dog';
   activity?: ActivityType;
-  /** The meter this mainly fills (shown on the button) */
+  /** The meter this mainly fills (shown on the prompt) */
   meter: MeterKey;
   color: number;
   description: string;
 }
 
-/** What the player can tell Carley to do. */
+/** What Carley can do (the player triggers these by walking up to the thing and pressing Space). */
 export const COMMANDS: CommandDef[] = [
   { id: 'sleep', name: 'Sleep', icon: 'bed', kind: 'activity', activity: 'sleeping', meter: 'rest', color: 0xa8a8ff, description: 'Go to bed. The longer she sleeps, the more her Rest fills.' },
   { id: 'paint', name: 'Paint', icon: 'paint', kind: 'activity', activity: 'painting', meter: 'fun', color: 0xffc94d, description: 'Paint at the easel. The longer she paints, the more Fun she has.' },
@@ -24,7 +24,9 @@ export const COMMANDS: CommandDef[] = [
   { id: 'garden', name: 'Garden', icon: 'can', kind: 'activity', activity: 'gardening', meter: 'nature', color: 0x8fd68f, description: 'Water the flowers. Fills her Garden meter (and the plants love it).' },
   { id: 'sunbathe', name: 'Sunbathe', icon: 'sun', kind: 'activity', activity: 'sunbathing', meter: 'relax', color: 0xffd45e, description: 'Lie on the blanket in the sunshine: big Relax boost. Needs sun!' },
   { id: 'call', name: 'Call Sister', icon: 'phone', kind: 'activity', activity: 'phone', meter: 'social', color: 0xff8fb8, description: 'Chat with her sister. Fills Social the longer they talk.' },
-  { id: 'milk', name: 'Milk', icon: 'milk', kind: 'milk', meter: 'tummy', color: 0xbfe3ff, description: 'A cold glass of milk: fills her Tummy.' },
+  { id: 'window', name: 'Look out of the window', icon: 'sun', kind: 'activity', activity: 'windowWatching', meter: 'relax', color: 0xa6d9ec, description: 'Watch the weather from the window: a little Relax.' },
+  { id: 'milk', name: 'Drink Milk', icon: 'milk', kind: 'milk', meter: 'tummy', color: 0xbfe3ff, description: 'A cold glass of milk from the fridge: fills her Tummy.' },
+  { id: 'dog', name: 'Pongo', icon: 'heart', kind: 'dog', meter: 'social', color: 0xf3cdc2, description: 'Indoors: a belly rub for Pongo. Outdoors: a game of fetch.' },
   { id: 'love', name: 'Hug', icon: 'heart', kind: 'love', meter: 'social', color: 0xff8fb1, description: 'Show Carley some love: Social and Relax up, aches soothed.' }
 ];
 
@@ -60,6 +62,14 @@ export class CommandSystem {
     const n = sim.character.needs;
     if (def.kind === 'milk') return sim.brain.isSleeping ? 'Let her sleep!' : null;
     if (def.kind === 'love') return sim.brain.isSleeping ? 'Let her sleep!' : null;
+    if (def.kind === 'dog') {
+      const d = sim.dog;
+      if (sim.brain.isSleeping) return 'Let her sleep!';
+      if (sim.agent.plane === 'stairs' || d.plane === 'stairs') return 'Not on the stairs!';
+      if (Math.abs(d.x - sim.agent.x) > 150 || d.level !== sim.agent.level) return `${d.name} is too far away`;
+      if (sim.isOutdoors && sim.weather.raining) return 'It is raining: better play indoors';
+      return null;
+    }
     const act = sim.activities.get(def.activity!);
     switch (def.activity) {
       case 'sleeping':
@@ -95,6 +105,7 @@ export class CommandSystem {
     const b = this.sim.brain;
     if (def.kind === 'milk') return b.reaction?.def.id === 'milk';
     if (def.kind === 'love') return b.reaction?.def.id === 'love';
+    if (def.kind === 'dog') return b.reaction?.def.id === 'petDog' || b.reaction?.def.id === 'playFetch';
     return b.run?.activity.id === def.activity && (b.run?.data.commanded === true || this.sim.autopilot);
   }
 
@@ -114,10 +125,19 @@ export class CommandSystem {
       brain.stopActivity();
       return { ok: true, message: `Okay, enough ${ACTIVITY_LABEL[def.activity!].toLowerCase()}` };
     }
+    if (def.kind === 'dog' && this.isActive(id)) {
+      brain.requestStop();
+      return { ok: true, message: `${sim.dog.name} had a lovely time!` };
+    }
     const block = this.blockReason(id);
     if (block) return { ok: false, message: block };
     if (brain.reaction && def.kind === 'activity') return { ok: false, message: 'She is busy for a moment...' };
 
+    if (def.kind === 'dog') {
+      // belly rubs indoors, fetch in the garden
+      brain.react(sim.isOutdoors ? 'playFetch' : 'petDog', true);
+      return { ok: true, message: sim.isOutdoors ? `Fetch with ${sim.dog.name}!` : `Belly rubs for ${sim.dog.name}!` };
+    }
     if (def.kind === 'milk') {
       if (brain.reaction?.def.id === 'milk') return { ok: false, message: 'She is already drinking!' };
       brain.react('milk', true);

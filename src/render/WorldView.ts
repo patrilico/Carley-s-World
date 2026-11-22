@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig';
-import { WALL_LEFT_X, BASKET, BED, FLOOR_Y, GARDEN_POT, LAMPS, WALL_OUTER_X, WINDOW_RECT, WORLD_RIGHT_X, WORLD_W, ZONE_SPLIT_X } from '../config/worldLayout';
-import { clamp, clamp01, lerp, smoothstep } from '../core/math';
+import { ARMCHAIR_X, BASKET, BED, BEDSIDE_TABLE, CEILING_Y, DOG_BED, EASEL_X, FLOOR_Y, GARDEN_POT, KITCHEN, LAMPS, PHONE_TABLE, SLAB_H, UPPER_Y, WALL_LEFT_X, WALL_OUTER_X, WINDOWS, WORLD_RIGHT_X, WORLD_W, ZONE_SPLIT_X } from '../config/worldLayout';
+import { approach, clamp, clamp01, lerp, smoothstep } from '../core/math';
 import type { Plant } from '../entities/Plant';
 import type { Simulation } from '../sim/Simulation';
 import { ART_DEPTH } from './art';
+import { KITCHEN_ORIGIN } from './houseArt';
 import { COL, polyline, quad, shape, smoothClosed, star4, type P2 } from './draw';
 
 // ----------------------------------------------------------------------------------------------------
@@ -171,15 +172,18 @@ export class SkyView {
 }
 
 // ----------------------------------------------------------------------------------------------------
-//  House & decor (static art + dynamic lights, painting, props at rest)
+//  House & decor (static art + dynamic lights, painting, props at rest, the fridge door)
 // ----------------------------------------------------------------------------------------------------
 export class HouseView {
   private lampGlow: Phaser.GameObjects.Image[] = [];
   private glowMask!: Phaser.Display.Masks.GeometryMask;
-  private roomGlow: Phaser.GameObjects.Image;
+  private roomGlows: Phaser.GameObjects.Image[] = [];
   private quilt: Phaser.GameObjects.Image;
   private canvasG: Phaser.GameObjects.Graphics;
   private props: Phaser.GameObjects.Graphics;
+  private fridgeG: Phaser.GameObjects.Graphics;
+  private fridgeLight: Phaser.GameObjects.Image;
+  private fridgeAmount = 0;
   private windowDim: Phaser.GameObjects.Rectangle;
   private nightDim: Phaser.GameObjects.Rectangle;
   private nightRamp: Phaser.GameObjects.Image;
@@ -191,20 +195,33 @@ export class HouseView {
       .rectangle(0, 60, 560, 600, 0x1b222c, 0)
       .setOrigin(0, 0)
       .setDepth(58);
-    // sky/hills dim inside the window rect so night looks consistent with outdoors
+    // sky/hills dim inside the window rects so night looks consistent with outdoors
     // the sky/hills behind and above the cottage get the same dimming as the outdoors overlay
     this.windowDim = scene.add.rectangle(0, 0, 560, FLOOR_Y, 0x131939, 0).setOrigin(0, 0).setDepth(4);
-    this.nightRamp = scene.add.image(0, 0, 'houseShade').setOrigin(0, 0).setDepth(58).setAlpha(0).setTint(0x1b222c);
+    this.nightRamp = scene.add.image(0, 0, 'houseShade').setOrigin(0, 0).setDepth(11.2).setAlpha(0).setTint(0x1b222c);
     this.dimRamp = scene.add.image(564, 0, 'shade').setOrigin(0, 0).setScale(-1, 1).setDepth(4).setAlpha(0);
     scene.add.image(0, 0, 'house').setOrigin(0, 0).setDepth(ART_DEPTH.house);
-    scene.add.image(150, FLOOR_Y - 102 + 4, 'rug').setDepth(ART_DEPTH.house + 0.5).setVisible(false);
-    scene.add.image(340, FLOOR_Y - 13, 'rug').setDepth(ART_DEPTH.house + 0.5);
-    // furniture
-    scene.add.image(BED.x - 8, FLOOR_Y - 110, 'bed').setOrigin(0, 0).setDepth(ART_DEPTH.furniture);
-    scene.add.image(262, FLOOR_Y - 106, 'table').setOrigin(0.5, 0).setDepth(ART_DEPTH.furniture);
+
+    const rugDepth = ART_DEPTH.house + 0.5;
+    // rugs: beside the bed upstairs, under the reading chair downstairs
+    scene.add.image(252, UPPER_Y - 13, 'rug').setScale(0.46, 1).setDepth(rugDepth);
+    scene.add.image(ARMCHAIR_X + 4, FLOOR_Y - 13, 'rug').setScale(0.62, 1).setDepth(rugDepth);
+
+    // upstairs furniture
+    scene.add.image(BED.x - 8, UPPER_Y - 110, 'bed').setOrigin(0, 0).setDepth(ART_DEPTH.furniture);
+    scene.add.image(BEDSIDE_TABLE.x - 32, BEDSIDE_TABLE.topY - 46, 'nightstand').setOrigin(0, 0).setDepth(ART_DEPTH.furniture);
+    scene.add.image(PHONE_TABLE.x - 24, PHONE_TABLE.topY - 4, 'phoneTable').setOrigin(0, 0).setDepth(ART_DEPTH.furniture);
+    // ceiling lights are sprites of their own so the warm glow sits behind them
+    scene.add.image(402, CEILING_Y, 'pendant').setOrigin(0, 0).setDepth(ART_DEPTH.furniture + 0.1);
+    scene.add.image(106, UPPER_Y + SLAB_H, 'ceilingLight').setOrigin(0, 0).setDepth(ART_DEPTH.furniture + 0.1);
+    // downstairs: kitchen, reading nook, easel, the dog's corner
+    scene.add.image(KITCHEN_ORIGIN.x, KITCHEN_ORIGIN.y, 'kitchen').setOrigin(0, 0).setDepth(ART_DEPTH.furniture);
+    this.fridgeG = scene.add.graphics().setDepth(ART_DEPTH.furniture + 0.4);
+    scene.add.image(DOG_BED.x - 7, FLOOR_Y - 28, 'dogBed').setOrigin(0, 0).setDepth(ART_DEPTH.furniture);
     scene.add.image(BASKET.x - 4, FLOOR_Y - 56, 'basket').setOrigin(0, 0).setDepth(ART_DEPTH.furniture + 0.2);
-    scene.add.image(366, 496, 'armchair').setOrigin(0.5, 0).setScale(0.88).setDepth(ART_DEPTH.furniture);
-    scene.add.image(452, FLOOR_Y - 160, 'easel').setOrigin(0.5, 0).setDepth(ART_DEPTH.furniture);
+    scene.add.image(ARMCHAIR_X, 496, 'armchair').setOrigin(0.5, 0).setScale(0.88).setDepth(ART_DEPTH.furniture);
+    scene.add.image(ARMCHAIR_X - 54, FLOOR_Y - 126, 'floorLamp').setOrigin(0.5, 0).setDepth(ART_DEPTH.furniture + 0.1);
+    scene.add.image(EASEL_X, FLOOR_Y - 160, 'easel').setOrigin(0.5, 0).setDepth(ART_DEPTH.furniture);
     this.canvasG = scene.add.graphics().setDepth(ART_DEPTH.furniture + 0.3);
     this.props = scene.add.graphics().setDepth(ART_DEPTH.furniture + 0.6);
 
@@ -218,9 +235,14 @@ export class HouseView {
       for (const gl of this.lampGlow) gl.setMask(mask);
       this.glowMask = mask;
     }
-    this.roomGlow = scene.add.image(260, 420, 'glow').setDepth(ART_DEPTH.glow).setBlendMode(Phaser.BlendModes.ADD).setScale(4.2, 2.6).setTint(0xf6c88c).setAlpha(0.0);
-    this.roomGlow.setMask(this.glowMask);
-    this.quilt = scene.add.image(BED.x + 100, 551, 'quilt').setDepth(ART_DEPTH.quilt).setAlpha(0).setScale(0.64, 1);
+    // a soft warm wash in each room: bedroom, kitchen and stair hall
+    for (const [x, y, sx, sy] of [[170, 330, 3.2, 1.7], [190, 520, 3.4, 1.2], [420, 400, 2.2, 2.6]] as [number, number, number, number][]) {
+      const g = scene.add.image(x, y, 'glow').setDepth(ART_DEPTH.glow).setBlendMode(Phaser.BlendModes.ADD).setScale(sx, sy).setTint(0xf6c88c).setAlpha(0);
+      g.setMask(this.glowMask);
+      this.roomGlows.push(g);
+    }
+    this.fridgeLight = scene.add.image(KITCHEN.fridge.x + 46, FLOOR_Y - 60, 'glow').setDepth(ART_DEPTH.glow).setBlendMode(Phaser.BlendModes.ADD).setScale(1.5, 1.7).setTint(0xdff1ff).setAlpha(0);
+    this.quilt = scene.add.image(BED.x + 100, BED.topY - 5, 'quilt').setDepth(ART_DEPTH.quilt).setAlpha(0).setScale(0.64, 1);
   }
 
   update(dt: number, sim: Simulation, windowDimColor: number, windowDimAlpha: number): void {
@@ -229,7 +251,7 @@ export class HouseView {
     // warm interior light stays on and gets stronger as the outdoors darkens
     const flicker = 1 + Math.sin(this.t * 7.3) * 0.025 + Math.sin(this.t * 13.1) * 0.015;
     for (const g of this.lampGlow) g.setAlpha((0.14 + night * 0.2) * flicker);
-    this.roomGlow.setAlpha(0.03 + night * 0.05);
+    for (const g of this.roomGlows) g.setAlpha(0.03 + night * 0.05);
     // gentle dimming of the whole interior at night, so the contrast with the dark garden is softer
     this.nightDim.setFillStyle(0x1b222c, 0);
     this.nightRamp.setAlpha(night * 0.3);
@@ -240,16 +262,86 @@ export class HouseView {
     const a = sim.agent;
     const asleep = sim.brain.isSleeping || (a.posture === 'lying' && !sim.isOutdoors);
     this.quilt.setAlpha(Phaser.Math.Linear(this.quilt.alpha, asleep ? 0.97 : 0, 1 - Math.exp(-6 * dt)));
-    this.quilt.setPosition(BED.x + 120, a.y - 12);
+    this.quilt.setPosition(BED.x + 110, a.y - 12);
 
     this.drawPainting(sim);
     this.drawRestingProps(sim);
+    this.drawFridge(dt, sim);
+  }
+
+  /** The fridge door swings open while Carley fetches her milk: lit shelves with a milk carton inside. */
+  private drawFridge(dt: number, sim: Simulation): void {
+    this.fridgeAmount = approach(this.fridgeAmount, sim.fridgeOpen ? 1 : 0, 6, dt);
+    const g = this.fridgeG;
+    const o = this.fridgeAmount;
+    g.clear();
+    this.fridgeLight.setAlpha(o * 0.32);
+    if (o < 0.02) return;
+    const f = KITCHEN.fridge;
+    const x0 = f.x + 3;
+    const x1 = f.x + f.w - 3;
+    const y0 = FLOOR_Y - f.h + 52;
+    const y1 = FLOOR_Y - 4;
+    // inside of the fridge
+    g.fillStyle(0xfffaf0, 1);
+    g.lineStyle(2.4, COL.outline, 1);
+    g.fillRoundedRect(x0, y0, x1 - x0, y1 - y0, 4);
+    g.strokeRoundedRect(x0, y0, x1 - x0, y1 - y0, 4);
+    g.fillStyle(0xe6f3fb, 1);
+    g.fillRect(x0 + 2, y0 + 2, x1 - x0 - 4, 5);
+    const shelves = [y0 + (y1 - y0) * 0.36, y0 + (y1 - y0) * 0.68];
+    g.lineStyle(2, 0xbfd3de, 1);
+    for (const sy of shelves) {
+      g.beginPath();
+      g.moveTo(x0 + 2, sy);
+      g.lineTo(x1 - 2, sy);
+      g.strokePath();
+    }
+    // milk carton, jar, apple, bottle
+    const carton = (x: number, base: number): void => {
+      g.fillStyle(0xffffff, 1);
+      g.lineStyle(1.8, COL.outline, 1);
+      g.fillRect(x, base - 17, 10, 17);
+      g.strokeRect(x, base - 17, 10, 17);
+      g.fillStyle(0x9fc7ef, 1);
+      g.fillRect(x + 1, base - 11, 8, 6);
+      g.fillStyle(0xe6f3fb, 1);
+      g.fillTriangle(x, base - 17, x + 10, base - 17, x + 5, base - 22);
+      g.lineStyle(1.6, COL.outline, 1);
+      g.strokeTriangle(x, base - 17, x + 10, base - 17, x + 5, base - 22);
+    };
+    carton(x0 + 6, shelves[0]);
+    g.fillStyle(0xeba997, 1);
+    g.lineStyle(1.6, COL.outline, 1);
+    g.fillRoundedRect(x0 + 22, shelves[0] - 11, 9, 11, 2);
+    g.strokeRoundedRect(x0 + 22, shelves[0] - 11, 9, 11, 2);
+    g.fillStyle(0xf2c878, 1);
+    g.fillCircle(x0 + 38, shelves[0] - 5, 5);
+    g.strokeCircle(x0 + 38, shelves[0] - 5, 5);
+    g.fillStyle(0xcfe8c9, 1);
+    g.fillRoundedRect(x0 + 8, shelves[1] - 15, 7, 15, 2);
+    g.strokeRoundedRect(x0 + 8, shelves[1] - 15, 7, 15, 2);
+    g.fillStyle(0xf6dba0, 1);
+    g.fillRoundedRect(x0 + 21, shelves[1] - 9, 20, 9, 2);
+    g.strokeRoundedRect(x0 + 21, shelves[1] - 9, 20, 9, 2);
+    // the door, hinged on the right edge and swung toward the viewer
+    const hx = x1 + 3;
+    const w = 24 * o;
+    const door = [{ x: hx, y: y0 - 6 }, { x: hx + w, y: y0 - 2 + 4 * o }, { x: hx + w, y: y1 + 2 - 4 * o }, { x: hx, y: y1 + 3 }];
+    shape(g, door, 0xb9e0d4, COL.outline, 2.4);
+    g.fillStyle(0xffffff, 0.3);
+    g.fillRect(hx + w * 0.2, y0 + 6, Math.max(1, w * 0.18), y1 - y0 - 14);
+    g.fillStyle(0xf6f3ec, 1);
+    g.lineStyle(1.6, COL.outline, 1);
+    g.fillRoundedRect(hx + w - 5 * o - 1, y0 + 24, 4, 24, 2);
+    g.strokeRoundedRect(hx + w - 5 * o - 1, y0 + 24, 4, 24, 2);
+    g.setAlpha(Math.min(1, o * 1.4));
   }
 
   private drawPainting(sim: Simulation): void {
     const g = this.canvasG;
     g.clear();
-    const cx = 452;
+    const cx = EASEL_X;
     const cy = 502;
     const w = 46;
     const h = 58;
@@ -329,24 +421,43 @@ export class HouseView {
       g.strokePath();
       g.restore();
     }
-    // phone on the little table when not in use
+    // retro phone on the telephone table when not in use
     if (prop !== 'phone') {
+      const px = PHONE_TABLE.x;
+      const py = PHONE_TABLE.topY;
+      // cord curling down the side of the table
+      g.lineStyle(1.6, COL.outline, 1);
+      g.beginPath();
+      g.moveTo(px + 12, py - 3);
+      g.lineTo(px + 17, py + 3);
+      g.lineTo(px + 15, py + 8);
+      g.strokePath();
+      // body + dial
       g.fillStyle(0xeeb4a4, 1);
-      g.lineStyle(1.8, COL.outline, 1);
-      g.fillRoundedRect(272, FLOOR_Y - 50 - 5, 14, 6, 2);
-      g.strokeRoundedRect(272, FLOOR_Y - 50 - 5, 14, 6, 2);
+      g.lineStyle(2, COL.outline, 1);
+      g.fillRoundedRect(px - 14, py - 12, 28, 12, 5);
+      g.strokeRoundedRect(px - 14, py - 12, 28, 12, 5);
+      g.fillStyle(0xfef6ef, 1);
+      g.fillCircle(px, py - 6, 3.8);
+      g.strokeCircle(px, py - 6, 3.8);
+      // handset resting on the cradle
+      const hs = [{ x: px - 14, y: py - 12 }, { x: px - 12, y: py - 17 }, { x: px + 12, y: py - 17 }, { x: px + 14, y: py - 12 }];
+      g.lineStyle(6, COL.outline, 1);
+      g.strokePoints(hs, false, false);
+      g.lineStyle(3, 0xfdf3ea, 1);
+      g.strokePoints(hs, false, false);
     }
     // brush rests on the easel tray when not in hand
     if (prop !== 'brush') {
       g.lineStyle(3, COL.outline, 1);
       g.beginPath();
-      g.moveTo(436, FLOOR_Y - 66);
-      g.lineTo(466, FLOOR_Y - 68);
+      g.moveTo(EASEL_X - 16, FLOOR_Y - 66);
+      g.lineTo(EASEL_X + 14, FLOOR_Y - 68);
       g.strokePath();
       g.lineStyle(1.6, 0xd0a265, 1);
       g.beginPath();
-      g.moveTo(436, FLOOR_Y - 66);
-      g.lineTo(466, FLOOR_Y - 68);
+      g.moveTo(EASEL_X - 16, FLOOR_Y - 66);
+      g.lineTo(EASEL_X + 14, FLOOR_Y - 68);
       g.strokePath();
     }
   }
@@ -677,7 +788,7 @@ export class WeatherView {
   private windG: Phaser.GameObjects.Graphics;
   private overlay: Phaser.GameObjects.Image;
   private drops: Drop[] = [];
-  private winDrops: { x: number; y: number; v: number; len: number }[] = [];
+  private winDrops: { x: number; y: number; v: number; len: number; win: number }[] = [];
   private splashes: { x: number; y: number; t: number }[] = [];
   private gustT = 0;
   private t = 0;
@@ -706,10 +817,13 @@ export class WeatherView {
     this.rainG.setMask(rainMask);
     this.windG.setMask(rainMask);
     const winMask = scene.make.graphics({}, false);
-    winMask.fillRect(WINDOW_RECT.x, WINDOW_RECT.y, WINDOW_RECT.w, WINDOW_RECT.h);
+    for (const w of WINDOWS) winMask.fillRect(w.x, w.y, w.w, w.h);
     this.winRainG.setMask(winMask.createGeometryMask());
     for (let i = 0; i < GAME_CONFIG.limits.maxRaindrops; i++) this.drops.push(this.newDrop(true));
-    for (let i = 0; i < 16; i++) this.winDrops.push({ x: WINDOW_RECT.x + Math.random() * WINDOW_RECT.w, y: WINDOW_RECT.y + Math.random() * WINDOW_RECT.h, v: 20 + Math.random() * 40, len: 6 + Math.random() * 10 });
+    for (let i = 0; i < 28; i++) {
+      const win = WINDOWS[i % WINDOWS.length];
+      this.winDrops.push({ x: win.x + Math.random() * win.w, y: win.y + Math.random() * win.h, v: 20 + Math.random() * 40, len: 6 + Math.random() * 10, win: i % WINDOWS.length });
+    }
   }
 
   private newDrop(initial = false): Drop {
@@ -834,18 +948,19 @@ export class WeatherView {
       rg.fillTriangle(-18, 204, 270, 74, 554, 204);
     } else this.roofSplashes.length = 0;
 
-    // --- rain seen through the window (so the house stays dry but the weather is visible) ---
+    // --- rain seen through the windows (so the house stays dry but the weather is visible) ---
     const wr = this.winRainG;
     wr.clear();
     if (rainAmt > 0.03) {
       wr.lineStyle(1.8, 0xeaf3fb, 0.85 * clamp01(rainAmt * 1.5));
       wr.beginPath();
       for (const d of this.winDrops) {
+        const win = WINDOWS[d.win];
         d.y += (d.v * 3 + rainAmt * 180) * dt;
         d.x += 6 * dt;
-        if (d.y > WINDOW_RECT.y + WINDOW_RECT.h) {
-          d.y = WINDOW_RECT.y - 10;
-          d.x = WINDOW_RECT.x + Math.random() * WINDOW_RECT.w;
+        if (d.y > win.y + win.h) {
+          d.y = win.y - 10;
+          d.x = win.x + Math.random() * win.w;
         }
         wr.moveTo(d.x, d.y);
         wr.lineTo(d.x - 1.5, d.y - d.len);
@@ -853,10 +968,13 @@ export class WeatherView {
       wr.strokePath();
       // drops sliding on the glass
       wr.fillStyle(0xe3f0fb, 0.65);
-      for (let i = 0; i < 8; i++) {
-        const gx = WINDOW_RECT.x + 8 + ((i * 53) % (WINDOW_RECT.w - 16));
-        const gy = WINDOW_RECT.y + ((this.t * (8 + i * 2) + i * 40) % WINDOW_RECT.h);
-        wr.fillEllipse(gx, gy, 3, 4.5);
+      for (const win of WINDOWS) {
+        const n = Math.max(4, Math.round(win.w / 11));
+        for (let i = 0; i < n; i++) {
+          const gx = win.x + 6 + ((i * 53) % Math.max(10, win.w - 12));
+          const gy = win.y + ((this.t * (8 + i * 2) + i * 40) % win.h);
+          wr.fillEllipse(gx, gy, 3, 4.5);
+        }
       }
     }
 

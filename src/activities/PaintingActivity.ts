@@ -1,8 +1,7 @@
 import { clamp01, hourBump } from '../core/math';
-import { getLocation } from '../config/worldLayout';
 import type { Simulation } from '../sim/Simulation';
 import type { Step } from '../systems/StepRunner';
-import { Activity, propAt, type ActivityRun } from './Activity';
+import { Activity, goTo, propAt, type ActivityRun } from './Activity';
 
 /** Painting at the easel: the canvas visibly fills in over time. */
 export class PaintingActivity extends Activity {
@@ -25,7 +24,7 @@ export class PaintingActivity extends Activity {
 
   override buildPrepare(sim: Simulation): Step[] {
     return [
-      { moveTo: { x: getLocation(this.locationId).x, tolerance: 3 }, label: 'to the easel' },
+      goTo(this.locationId, 3, 'to the easel'),
       {
         action: 'pickUp', duration: 1.1, faceDir: 1, label: 'pick up brush', face: { emotion: 'curious' },
         onStart: () => { if (sim.easel.progress >= 0.95) sim.easel.reset(sim.rng); },
@@ -35,7 +34,7 @@ export class PaintingActivity extends Activity {
   }
 
   override buildResume(sim: Simulation): Step[] {
-    return [{ moveTo: { x: getLocation(this.locationId).x, tolerance: 3 } }, { action: 'pickUp', duration: 1.1, faceDir: 1, onTick: propAt('brush', 0.8) }];
+    return [goTo(this.locationId, 3), { action: 'pickUp', duration: 1.1, faceDir: 1, onTick: propAt('brush', 0.8) }];
   }
 
   override nextPerformSteps(sim: Simulation, run: ActivityRun): Step[] {

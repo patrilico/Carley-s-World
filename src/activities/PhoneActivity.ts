@@ -1,8 +1,7 @@
 import { hourBump } from '../core/math';
 import type { Simulation } from '../sim/Simulation';
 import type { Step } from '../systems/StepRunner';
-import { getLocation } from '../config/worldLayout';
-import { Activity, propAt, type ActivityRun } from './Activity';
+import { Activity, goTo, propAt, type ActivityRun } from './Activity';
 
 /** Calling her sister: retrieve phone, chat and gesture, laugh, hang up. */
 export class PhoneActivity extends Activity {
@@ -30,7 +29,7 @@ export class PhoneActivity extends Activity {
   }
 
   override buildResume(sim: Simulation): Step[] {
-    return [{ moveTo: { x: getLocation(this.locationId).x } }, ...this.buildPrepare()];
+    return [goTo(this.locationId), ...this.buildPrepare()];
   }
 
   override nextPerformSteps(sim: Simulation, run: ActivityRun): Step[] {

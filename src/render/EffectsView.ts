@@ -91,6 +91,9 @@ export class EffectsView {
         case 'splash': this.burst(e.x, e.y, 6, [0xc8e2f6], 'drop', 70, 0.5, 400); break;
         case 'notice': this.indicator = { kind: '!', t: 0, dur: 1 }; break;
         case 'poof': this.burst(e.x, e.y, 8, [0xffffff], 'puff', 40, 0.6); break;
+        case 'hearts':
+          for (let i = 0; i < 5; i++) this.spawn({ kind: 'heart', x: e.x + (i - 2) * 11, y: e.y - Math.abs(i - 2) * 4, vy: -34 - Math.random() * 22, vx: (Math.random() - 0.5) * 18, max: 1.5, size: 5 + Math.random() * 3, color: [0xe99f8a, 0xf3cdc2, 0xeeb4a4][i % 3] });
+          break;
       }
     });
     bus.on('windGust', () => {
@@ -115,6 +118,12 @@ export class EffectsView {
       if (cause === 'swatted') this.burst(sim.agent.x + 30, sim.agent.y - 90, 8, [0xffffff, 0xf4d995], 'star', 70, 0.5);
     });
     bus.on('discovery', () => this.burst(sim.agent.x, sim.agent.y - 110, 14, [0xf4d995, 0xffffff], 'star', 90, 1));
+    // the puppy wants a fuss: a little heart pops over his head
+    bus.on('dogCall', () => {
+      const h = sim.dog.headPos();
+      this.spawn({ kind: 'heart', x: h.x, y: h.y - 22, vy: -22, vx: 0, max: 1.4, size: 6.5, color: 0xe99f8a });
+    });
+    bus.on('dogCaught', ({ x, y }) => this.burst(x, y, 12, [0xffffff, 0xf4d995, 0xf3cdc2], 'star', 80, 0.7));
     bus.on('plantBloomed', () => {});
     bus.on('thought', () => {});
   }

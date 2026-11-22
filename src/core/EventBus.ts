@@ -3,14 +3,16 @@ import type { ActivityType, EmotionType, PropId, WeatherType } from './types';
 export type SfxId =
   | 'footstep' | 'water' | 'page' | 'surprise' | 'happy' | 'laugh' | 'giggle' | 'sad' | 'irritated' | 'ouch'
   | 'sigh' | 'yawn' | 'heal' | 'magic' | 'sparkle' | 'swat' | 'splash' | 'wind' | 'pop' | 'hum' | 'chirp'
-  | 'bloom' | 'gulp' | 'thud' | 'brush' | 'phone';
+  | 'bloom' | 'gulp' | 'thud' | 'brush' | 'phone'
+  // the dog
+  | 'bark' | 'yip' | 'yipHappy' | 'whine' | 'pant' | 'sniff' | 'snore' | 'pawstep' | 'jingle' | 'dogShake' | 'dogSigh' | 'chomp' | 'ballBounce' | 'throw' | 'tailThump';
 
 export interface GameEvents {
   rainStarted: undefined;
   rainStopped: undefined;
   weatherChanged: { from: WeatherType; to: WeatherType };
   mosquitoSpawned: { id: number };
-  mosquitoRemoved: { id: number; cause: 'swatted' | 'shooed' | 'expired' };
+  mosquitoRemoved: { id: number; cause: 'swatted' | 'shooed' | 'expired' | 'eaten' };
   butterflySpawned: { id: number };
   plantBloomed: { index: number };
   plantWatered: { index: number };
@@ -23,13 +25,19 @@ export interface GameEvents {
   emotionChanged: { from: EmotionType; to: EmotionType };
   thought: { text: string; priority: number; durationMs?: number };
   sfx: { id: SfxId; x?: number; volume?: number };
-  effect: { kind: 'sparkles' | 'heal' | 'bloom' | 'puff' | 'gust' | 'splash' | 'notice' | 'poof'; x: number; y: number };
+  effect: { kind: 'sparkles' | 'heal' | 'bloom' | 'puff' | 'gust' | 'splash' | 'notice' | 'poof' | 'hearts'; x: number; y: number };
   powerActivated: { id: string; ok: boolean; message?: string };
   propChanged: { prop: PropId };
   sunEmerged: undefined;
   discovery: { what: string };
   sleepStarted: undefined;
   sleepEnded: undefined;
+  /** The dog wants Carley's attention (sits by her feet and begs). */
+  dogCall: undefined;
+  /** The dog caught a bug that was bothering Carley. */
+  dogCaught: { x: number; y: number };
+  /** A game of fetch / a belly rub started or ended. */
+  dogPlay: { kind: 'fetch' | 'pet'; started: boolean };
 }
 
 type Handler<T> = (payload: T) => void;

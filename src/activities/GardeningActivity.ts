@@ -2,7 +2,7 @@ import { clamp, clamp01, hourBump } from '../core/math';
 import type { Simulation } from '../sim/Simulation';
 import { getLocation } from '../config/worldLayout';
 import type { Step } from '../systems/StepRunner';
-import { Activity, propAt, type ActivityRun } from './Activity';
+import { Activity, goTo, propAt, type ActivityRun } from './Activity';
 import type { ActivityNeedsEffect } from '../config/activityConfig';
 import { ACTIVITY_TUNING } from '../config/activityConfig';
 
@@ -52,7 +52,7 @@ export class GardeningActivity extends Activity {
   override buildResume(sim: Simulation): Step[] {
     if (sim.agent.prop === 'wateringCan') return [];
     return [
-      { moveTo: { x: getLocation(this.locationId).x }, label: 'back to the can' },
+      goTo(this.locationId, 6, 'back to the can'),
       ...this.buildPrepare()
     ];
   }
@@ -93,7 +93,7 @@ export class GardeningActivity extends Activity {
 
   override buildComplete(): Step[] {
     return [
-      { moveTo: { x: getLocation(this.locationId).x }, label: 'return can' },
+      goTo(this.locationId, 6, 'return can'),
       { action: 'putAway', duration: 1.1, faceDir: -1, label: 'put away can', onEnd: (env) => { env.agent.prop = null; } },
       { action: 'smile', duration: 1.2, face: { emotion: 'happy' }, thought: 'flowers' }
     ];

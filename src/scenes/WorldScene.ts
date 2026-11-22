@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig';
 import { ArcadeCharacterBody } from '../render/ArcadeCharacterBody';
+import { BallView } from '../render/BallView';
 import { CarleyView } from '../render/CarleyView';
+import { DogView } from '../render/DogView';
 import { EffectsView } from '../render/EffectsView';
 import { GardenView, HouseView, SkyView, WeatherView } from '../render/WorldView';
 import { Simulation } from '../sim/Simulation';
@@ -12,6 +14,8 @@ import { SaveSystem } from '../systems/SaveSystem';
 export class WorldScene extends Phaser.Scene {
   sim!: Simulation;
   carleyView!: CarleyView;
+  dogView!: DogView;
+  ballView!: BallView;
   audio!: AudioSystem;
   private sky!: SkyView;
   private house!: HouseView;
@@ -28,6 +32,7 @@ export class WorldScene extends Phaser.Scene {
 
   create(): void {
     const settings = SaveSystem.loadSettings();
+    this.cameras.main.setScroll(0, GAME_CONFIG.worldScrollY);
     const body = new ArcadeCharacterBody(this, 360);
     this.sim = new Simulation({ body, seed: (Date.now() & 0xffffff) ^ GAME_CONFIG.seed });
     this.loadedSave = SaveSystem.load(this.sim);
@@ -36,6 +41,8 @@ export class WorldScene extends Phaser.Scene {
     this.house = new HouseView(this);
     this.garden = new GardenView(this);
     this.carleyView = new CarleyView(this, 50);
+    this.dogView = new DogView(this, 47);
+    this.ballView = new BallView(this, 49);
     this.weather = new WeatherView(this);
     this.effects = new EffectsView(this, this.sim, this.carleyView, this.garden, this.weather);
 
@@ -70,6 +77,8 @@ export class WorldScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       for (const f of this.saveHandlers) f();
       this.carleyView.destroy();
+      this.dogView.destroy();
+      this.ballView.destroy();
     });
 
     // dev/test hook
@@ -103,6 +112,8 @@ export class WorldScene extends Phaser.Scene {
     this.house.update(vdt, sim, this.weather.overlayColor, this.weather.overlayAlpha);
     this.garden.update(vdt, sim);
     this.carleyView.update(vdt, sim);
+    this.dogView.update(vdt, sim);
+    this.ballView.update(sim);
     this.effects.update(vdt);
     this.audio.update(vdt);
   }

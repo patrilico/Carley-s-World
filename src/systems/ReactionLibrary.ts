@@ -1,4 +1,5 @@
-import { GARDEN_POT, getLocation } from '../config/worldLayout';
+import { GARDEN_POT, getLocation, getWindow } from '../config/worldLayout';
+import { goTo } from '../activities/Activity';
 import type { Carley } from '../entities/Carley';
 import type { Mosquito } from '../entities/Insect';
 import type { Vec2 } from '../core/types';
@@ -21,7 +22,7 @@ export const Priority = {
 
 export type ReactionId =
   | 'rainSurprise' | 'mosquito' | 'injury' | 'love' | 'milk' | 'windGust' | 'stumble' | 'startled'
-  | 'butterfly' | 'bloom' | 'discovery' | 'sunEmerged' | 'noticeRain' | 'relief';
+  | 'butterfly' | 'bloom' | 'discovery' | 'sunEmerged' | 'noticeRain' | 'relief' | 'dogHero' | 'petDog' | 'playFetch';
 
 export interface ReactionRun {
   def: ReactionDef;
@@ -40,6 +41,8 @@ export interface ReactionDef {
   /** Default for `ReactionRun.abandon`. */
   abandons: boolean;
   start(env: StepEnv, run: ReactionRun): Step[];
+  /** The player may cut it short (Space / a movement key): `run.data.stop` is set and `next` should wind it down. */
+  stoppable?: boolean;
   /** More steps when the queue empties (return null to finish). */
   next?(env: StepEnv, run: ReactionRun): Step[] | null;
 }
@@ -52,6 +55,8 @@ const standSteps = (agent: Carley, face?: Step['face']): Step[] => {
     default: return [];
   }
 };
+
+const dogGaze = (sim: Simulation) => (): Vec2 => sim.dog.headPos();
 
 const mosquitoGaze = (sim: Simulation) => (): Vec2 | null => {
   const m = sim.nearestMosquito(260);
@@ -110,7 +115,7 @@ export const REACTIONS: Record<ReactionId, ReactionDef> = {
           face: { emotion: 'surprised', gaze: { x: env.agent.x, y: 30 } }, emotion: ['surprised', 0.9, 1.3]
         },
         { action: lying ? 'lieIdle' : 'sigh', duration: 1.2, label: 'disappointed', face: { emotion: 'sad' }, sfx: 'sad', emotion: ['sad', 0.8, 2] },
-        { moveTo: { x: shelter, run: true, tolerance: 12 }, label: 'run for the house', face: { emotion: 'surprised' } },
+        { moveTo: { x: shelter, run: true, tolerance: 12, level: 'ground' }, label: 'run for the house', face: { emotion: 'surprised' } },
         { action: 'shakeOff', duration: 1.15, label: 'shake off drops', face: { emotion: 'irritated' }, sfx: 'surprise' },
         { action: 'relief', duration: 1.7, label: 'safe and dry', face: { emotion: 'relaxed' }, thought: 'cozy' }
       ] as Step[];
@@ -165,7 +170,7 @@ export const REACTIONS: Record<ReactionId, ReactionDef> = {
         run.abandon = true;
         return [
           { action: 'stomp', duration: 1.1, label: 'stomp in frustration', face: { emotion: 'angry' }, sfx: 'irritated', thought: 'shoo' },
-          { moveTo: { x: getLocation('shelter').x, run: true, tolerance: 12 }, label: 'retreat indoors', face: { emotion: 'angry' } },
+          { moveTo: { x: getLocation('shelter').x, run: true, tolerance: 12, level: 'ground' }, label: 'retreat indoors', face: { emotion: 'angry' } },
           { action: 'crossArms', duration: 2, label: 'sulk indoors', face: { emotion: 'irritated' } }
         ];
       }
@@ -199,9 +204,18 @@ export const REACTIONS: Record<ReactionId, ReactionDef> = {
   milk: {
     id: 'milk', priority: Priority.heal, cooldown: 2, abandons: false,
     start: (env) => [
-      ...standSteps(env.agent, { emotion: 'surprised' }),
-      { action: 'surprised', duration: 0.8, label: 'a glass appears!', face: { emotion: 'surprised' }, sfx: 'surprise', thought: 'milk', prop: null, onStart: (e) => e.sim.bus.emit('effect', { kind: 'sparkles', x: e.agent.x + 20, y: e.agent.y - 60 }) },
-      { action: 'takeGlass', duration: 1, label: 'takes the glass', face: { emotion: 'delighted' }, prop: 'milk', sfx: 'pop' },
+      ...standSteps(env.agent, { emotion: 'happy' }),
+      // she fetches it herself from the fridge in the kitchen (taking the stairs if she is upstairs)
+      { ...goTo('fridge', 4, 'to the fridge'), face: { emotion: 'happy' }, thought: 'milk' },
+      {
+        action: 'openFridge', duration: 1.3, faceDir: -1, label: 'open the fridge', face: { emotion: 'curious' }, prop: null, sfx: 'pop',
+        onStart: (e) => { e.sim.fridgeOpen = true; },
+        onEnd: (e) => { e.sim.bus.emit('effect', { kind: 'sparkles', x: e.agent.x - 24, y: e.agent.y - 62 }); }
+      },
+      {
+        action: 'takeGlass', duration: 1, label: 'takes the glass', face: { emotion: 'delighted' }, prop: 'milk', sfx: 'pop',
+        onEnd: (e) => { e.sim.fridgeOpen = false; }
+      },
       {
         action: 'drinkMilk', duration: 2.8, label: 'gulp gulp gulp', face: { emotion: 'relaxed', eyesClosed: true }, sfx: 'gulp',
         onEnd: (e) => { e.agent.stache = 1; }
@@ -334,10 +348,169 @@ export const REACTIONS: Record<ReactionId, ReactionDef> = {
     }
   },
 
+  // Carley cheers when the dog gets a mosquito that was bothering her
+  dogHero: {
+    id: 'dogHero', priority: Priority.event, cooldown: 14, abandons: false,
+    start: (env) => {
+      const sim = env.sim;
+      const gaze = dogGaze(sim);
+      sim.memory.add('dogHero', 0.8, 0.7, 'outdoors');
+      sim.bus.emit('effect', { kind: 'hearts', x: sim.dog.x, y: sim.dog.y - 50 });
+      if (env.agent.posture !== 'standing') {
+        return [{ action: restingAction(env.agent.posture), duration: 1.8, label: 'cheers for the pup', face: { emotion: 'delighted', gaze }, thought: 'dogHero', sfx: 'giggle' }];
+      }
+      return [
+        { action: 'surprised', duration: 0.6, label: 'saw that!', face: { emotion: 'surprised', gaze }, sfx: 'surprise' },
+        { action: 'celebrateJump', duration: 1.1, label: 'good boy!', face: { emotion: 'delighted', gaze }, thought: 'dogHero', sfx: 'happy', emotion: ['delighted', 1, 4] },
+        { action: 'wave', duration: 1.3, label: 'blows a kiss', face: { emotion: 'delighted', gaze }, sfx: 'giggle' }
+      ];
+    }
+  },
+
+  // Belly rubs: she calls him over, kneels, strokes his back while he rolls over, then a big cuddle
+  petDog: {
+    id: 'petDog', priority: Priority.heal, cooldown: 2, abandons: false, stoppable: true,
+    start: (env, run) => {
+      const sim = env.sim;
+      sim.dogPet = { active: true, phase: 'come' };
+      sim.bus.emit('dogPlay', { kind: 'pet', started: true });
+      run.data.stage = 0;
+      run.data.tries = 0;
+      return [
+        ...standSteps(env.agent, { emotion: 'happy' }),
+        { action: 'callDog', duration: 1.1, label: 'calls the pup', face: { emotion: 'delighted', gaze: dogGaze(sim) }, sfx: 'happy', thought: 'dogCall', onStart: (e) => e.agent.faceToward(e.sim.dog.x) }
+      ];
+    },
+    next: (env, run) => {
+      const sim = env.sim;
+      const a = env.agent;
+      const d = sim.dog;
+      const gaze = dogGaze(sim);
+      if (run.data.stage === 0) {
+        if (run.data.stop) return null;
+        const close = Math.abs(d.x - a.x) < 60 && d.level === a.level && d.plane !== 'stairs';
+        if (!close && (run.data.tries as number) < 8) {
+          run.data.tries = (run.data.tries as number) + 1;
+          return [{ moveTo: { x: d.x - Math.sign(d.x - a.x || 1) * 42, tolerance: 10, level: d.level }, label: 'goes to the pup', face: { emotion: 'delighted', gaze } }];
+        }
+        if (!close) return null;
+        run.data.stage = 1;
+      }
+      if (run.data.stage === 1) {
+        run.data.stage = 2;
+        const hearts = (e: StepEnv): void => e.sim.bus.emit('effect', { kind: 'hearts', x: e.sim.dog.x, y: e.sim.dog.y - 46 });
+        return [
+          { action: 'kneel', posture: 'kneeling', duration: 0.75, faceDir: d.x >= a.x ? 1 : -1, label: 'kneels down', face: { emotion: 'delighted', gaze }, onStart: (e) => { e.sim.dogPet.phase = 'roll'; } },
+          { action: 'petDog', duration: 1.9, label: 'belly rub', face: { emotion: 'delighted', gaze }, sfx: 'giggle', thought: 'dogPet', onStart: hearts },
+          { action: 'petDog', duration: 1.9, label: 'more belly rubs', face: { emotion: 'delighted', gaze }, onStart: hearts },
+          {
+            action: 'cuddleDog', duration: 2.2, label: 'big cuddle', face: { emotion: 'delighted', override: { blush: 1 } }, sfx: 'heal',
+            onStart: (e) => {
+              const s = e.sim;
+              s.dogPet.phase = 'happy';
+              const n = s.character.needs;
+              n.social = Math.min(100, n.social + 26);
+              n.comfort = Math.min(100, n.comfort + 20);
+              n.pain = Math.max(0, n.pain - 30);
+              n.irritation = Math.max(0, n.irritation - 12);
+              s.memory.add('dogLove', 0.9, 0.8);
+              s.dogBrain.rewardAttention(70);
+              s.bus.emit('effect', { kind: 'heal', x: s.dog.x, y: s.dog.y - 46 });
+              e.agent.glow = 0.7;
+            }
+          },
+          { action: 'kneelUp', posture: 'standing', duration: 0.75, label: 'stands up', face: { emotion: 'happy' }, sfx: 'giggle' }
+        ];
+      }
+      return null;
+    }
+  },
+
+  // Fetch in the garden: she throws the ball, the dog chases it, brings it back, again
+  playFetch: {
+    id: 'playFetch', priority: Priority.heal, cooldown: 2, abandons: false, stoppable: true,
+    start: (env, run) => {
+      const sim = env.sim;
+      sim.fetch = { active: true, phase: 'wait', throws: 0 };
+      sim.ball.state = 'held';
+      sim.bus.emit('dogPlay', { kind: 'fetch', started: true });
+      run.data.stage = 0;
+      run.data.rounds = 0;
+      return [
+        ...standSteps(env.agent, { emotion: 'happy' }),
+        { action: 'callDog', duration: 1.2, label: 'shows the ball', face: { emotion: 'delighted', gaze: dogGaze(sim) }, sfx: 'happy', thought: 'dogFetch', prop: 'ball', onStart: (e) => e.agent.faceToward(e.sim.dog.x) }
+      ];
+    },
+    next: (env, run) => {
+      const sim = env.sim;
+      const a = env.agent;
+      const ballGaze = (): Vec2 => ({ x: sim.ball.x, y: sim.ball.y });
+      const rounds = run.data.rounds as number;
+      if (run.data.stage === 9) return null;
+      if (run.data.stop || rounds >= 6 || !sim.fetch.active) {
+        run.data.stage = 9;
+        return [
+          { action: 'smile', duration: 0.4, label: 'puts the ball away', prop: null, onStart: (e) => { e.sim.ball.state = 'held'; e.sim.fetch.phase = 'idle'; } },
+          { action: 'laugh', duration: 1.5, label: 'what a good pup', face: { emotion: 'delighted', gaze: dogGaze(sim) }, sfx: 'giggle', thought: 'dogLove' }
+        ];
+      }
+      const stage = run.data.stage as number;
+      if (stage === 0) {
+        run.data.stage = 1;
+        const dir: 1 | -1 = a.x < 900 ? 1 : -1;
+        return [{
+          action: 'throwBall', duration: 1.0, faceDir: dir, label: 'throws the ball', face: { emotion: 'delighted' },
+          onStart: (e) => { delete e.agent.actionData.thrown; },
+          onTick: (e, t) => {
+            if (t >= 0.42 && !e.agent.actionData.thrown) {
+              e.agent.actionData.thrown = 1;
+              e.sim.throwBall(dir);
+            }
+          }
+        }];
+      }
+      if (stage === 1) {
+        run.data.stage = 2;
+        return [{
+          action: 'point', duration: 16, label: 'watches him fetch', face: { emotion: 'delighted', gaze: ballGaze },
+          until: (e) => e.sim.fetch.phase === 'ready' || !e.sim.fetch.active
+        }];
+      }
+      if (stage === 2) {
+        if (sim.fetch.phase !== 'ready') {
+          // the ball got lost somewhere: end the game gracefully
+          run.data.stage = 9;
+          sim.fetch.active = false;
+          sim.ball.state = 'held';
+          return null;
+        }
+        run.data.stage = 0;
+        run.data.rounds = rounds + 1;
+        return [
+          {
+            action: 'pickUp', duration: 1.1, label: 'picks up the ball', face: { emotion: 'happy', gaze: dogGaze(sim) }, sfx: 'giggle',
+            onTick: (e, t) => {
+              if (t >= 0.7 && e.sim.ball.state === 'rest') {
+                e.sim.ball.state = 'held';
+                e.agent.prop = 'ball';
+                e.sim.fetch.phase = 'wait';
+              }
+            }
+          },
+          { action: 'excitedBounce', duration: 0.9, label: 'ready again!', face: { emotion: 'delighted', gaze: dogGaze(sim) }, prop: 'ball', onStart: (e) => { e.sim.fetch.phase = 'wait'; e.sim.ball.state = 'held'; } }
+        ];
+      }
+      return null;
+    }
+  },
+
   noticeRain: {
     id: 'noticeRain', priority: Priority.ambient, cooldown: 60, abandons: false,
-    start: () => [
-      { action: 'lookAround', duration: 1.6, label: 'rain outside', face: { emotion: 'curious', gaze: { x: 280, y: 270 } }, thought: 'cozy' }
-    ]
+    start: (env) => {
+      const win = getWindow(env.agent.level === 'upper' ? 'up' : 'down');
+      return [
+        { action: 'lookAround', duration: 1.6, label: 'rain outside', face: { emotion: 'curious', gaze: { x: win.x + win.w / 2, y: win.y + win.h / 2 } }, thought: 'cozy' }
+      ];
+    }
   }
 };

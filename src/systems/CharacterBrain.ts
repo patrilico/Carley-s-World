@@ -75,10 +75,7 @@ export class CharacterBrain {
     const env = this.env;
     this.resistance = Math.max(0, this.resistance - simDt);
 
-    // movement speed follows emotion, pain and exhaustion
-    const n = sim.character.needs;
-    agent.speedMultiplier = POSTURE[sim.emotion.effective].speed * (n.pain > 25 ? 0.75 : 1) * (n.energy < 20 ? 0.85 : 1);
-
+    this.updateMovementSpeed();
     if (agent.stuck) this.recoverFromStuck();
 
     if (this.state === 'REACTING') {
@@ -130,6 +127,40 @@ export class CharacterBrain {
         break;
       }
     }
+  }
+
+  // ------------------------------------------------------------------ player takeover
+
+  /** Movement speed follows emotion, pain and exhaustion (also used while the player walks her around). */
+  updateMovementSpeed(): void {
+    const sim = this.sim;
+    const n = sim.character.needs;
+    sim.agent.speedMultiplier = POSTURE[sim.emotion.effective].speed * (n.pain > 25 ? 0.75 : 1) * (n.energy < 20 ? 0.85 : 1);
+  }
+
+  /** The player grabs the controls: drop any idle gesture / transition that is running. */
+  yieldToPlayer(): void {
+    const sim = this.sim;
+    this.runner.clear(this.env);
+    this.run = null;
+    this.endReason = null;
+    this.pending = null;
+    sim.character.currentActivity = 'idle';
+    sim.character.currentLocationId = undefined;
+    sim.agent.face = {};
+    this.state = 'SELECT_ACTIVITY';
+    this.idleSelectDelay = 99;
+  }
+
+  /** The player let go of the keys: she stands and does her little idle things again after a moment. */
+  handBack(): void {
+    this.state = 'SELECT_ACTIVITY';
+    this.idleSelectDelay = 1.6;
+  }
+
+  /** The player asks a long friendly reaction (belly rubs, fetch) to wind down. */
+  requestStop(): void {
+    if (this.reaction?.def.stoppable) this.reaction.data.stop = true;
   }
 
   // ------------------------------------------------------------------ activity lifecycle
@@ -197,9 +228,8 @@ export class CharacterBrain {
       this.enterPerform();
       return;
     }
-    const x = act.navigateX(sim, run);
     this.state = 'NAVIGATE_TO_LOCATION';
-    this.runner.start([{ moveTo: { x, tolerance: 6 }, label: `go to ${act.locationId}` }]);
+    this.runner.start([act.navigateStep(sim, run, `go to ${act.locationId}`)]);
   }
 
   private enterPrepare(): void {
@@ -391,7 +421,7 @@ export class CharacterBrain {
     // quick interruption: resume where she left off
     if (!sus.run.prepared) {
       this.state = 'NAVIGATE_TO_LOCATION';
-      this.runner.start([{ moveTo: { x: act.navigateX(sim, sus.run), tolerance: 6 }, label: 'resume: go to location' }]);
+      this.runner.start([act.navigateStep(sim, sus.run, 'resume: go to location')]);
     } else {
       this.state = 'PREPARE_ACTIVITY';
       this.runner.start(act.buildResume(sim, sus.run));
@@ -406,7 +436,7 @@ export class CharacterBrain {
     this.stuckRecoveries++;
     agent.clearStuck();
     agent.stop();
-    agent.body.teleport(sim.zones.nearestFloorStandX(agent.x));
+    agent.placeSafely();
     agent.posture = 'standing';
     if (this.reaction) {
       this.reaction.runner.clear();

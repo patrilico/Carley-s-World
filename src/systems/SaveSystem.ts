@@ -1,6 +1,6 @@
 import { GAME_CONFIG } from '../config/gameConfig';
 import { clamp, clamp100 } from '../core/math';
-import type { CharacterMemory, WeatherType } from '../core/types';
+import type { CharacterMemory, Level, WeatherType } from '../core/types';
 import type { Simulation } from '../sim/Simulation';
 
 export interface StorageLike {
@@ -20,12 +20,16 @@ export interface SaveData {
   character: {
     needs: Record<string, number>;
     x: number;
+    /** Floor she was on (older saves have none: ground). */
+    level?: Level;
     mood: number;
     memories: CharacterMemory[];
   };
   eventCooldowns: [string, number][];
   activityCooldowns: [string, number][];
   easel: { progress: number; seed: number };
+  /** The dalmatian: where he is and how attached he is (absent in older saves). */
+  dog?: { x: number; level: Level; bond: number; attention: number; energy: number };
   rng: number;
   streak?: { current: number; best: number };
 }
@@ -69,12 +73,14 @@ export const SaveSystem = {
       character: {
         needs: { ...sim.character.needs },
         x: sim.agent.x,
+        level: sim.agent.level,
         mood: sim.emotion.mood.value,
         memories: sim.memory.serialize()
       },
       eventCooldowns: sim.events.serialize(),
       activityCooldowns: sim.activities.serialize().lastEnded,
       easel: sim.easel.serialize(),
+      dog: sim.dogBrain.serialize(),
       rng: sim.rng.state,
       streak: { current: sim.happyStreak, best: sim.bestStreak }
     };
@@ -161,10 +167,16 @@ export const SaveSystem = {
     sim.rng.state = d.rng;
     sim.happyStreak = d.streak?.current ?? 0;
     sim.bestStreak = d.streak?.best ?? 0;
-    // never resume mid-animation: stand idle at a valid floor position
-    const x = sim.zones.nearestFloorStandX(d.character.x);
-    sim.agent.body.teleport(x);
+    // never resume mid-animation: stand idle at a valid floor position, on the floor she was on
+    const level: Level = d.character.level === 'upper' ? 'upper' : 'ground';
+    const x = sim.zones.nearestFloorStandX(d.character.x, level);
+    sim.agent.stairsGoal = level;
+    sim.agent.body.teleport(x, level);
     sim.brain.resetToIdle();
+    const dog = d.dog;
+    if (dog && isNum(dog.x) && isNum(dog.bond) && isNum(dog.attention) && isNum(dog.energy)) {
+      sim.dogBrain.restore({ ...dog, level: dog.level === 'upper' ? 'upper' : 'ground' });
+    }
     sim.mosquitoes = [];
     sim.butterflies = [];
   },

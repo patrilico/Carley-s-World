@@ -3,6 +3,7 @@ import { CharacterBrain } from '../systems/CharacterBrain';
 import { DayNightSystem } from '../systems/DayNightSystem';
 import { EmotionSystem, computeMoodScore } from '../systems/EmotionSystem';
 import { CommandSystem } from '../systems/CommandSystem';
+import { PlayerControl } from '../systems/PlayerControl';
 import { MemorySystem } from '../systems/MemorySystem';
 import { createInitialNeeds, updateNeeds, applyMosquitoAnnoyance, type NeedsEnvironment } from '../systems/NeedsSystem';
 import { ThoughtSystem } from '../systems/ThoughtSystem';
@@ -10,12 +11,15 @@ import { WeatherSystem } from '../systems/WeatherSystem';
 import { WorldEventSystem } from '../systems/WorldEventSystem';
 import { ZoneSystem } from '../systems/ZoneSystem';
 import { Carley, KinematicBody, type CharacterBody } from '../entities/Carley';
+import { Ball } from '../entities/Ball';
+import { Dog } from '../entities/Dog';
+import { DogBrain } from '../systems/DogBrain';
 import { Easel } from '../entities/InteractiveObject';
 import { Butterfly, Mosquito, resetInsectIds, type InsectEnv } from '../entities/Insect';
 import { Plant, createPlants } from '../entities/Plant';
 import { DEFAULT_PERSONALITY, MOSQUITO } from '../config/characterConfig';
 import { GAME_CONFIG } from '../config/gameConfig';
-import { FLOOR_Y, PLANT_XS, ZONE_SPLIT_X } from '../config/worldLayout';
+import { BED_STATE, FLOOR_Y, PLANT_XS, UPPER_Y, ZONE_SPLIT_X } from '../config/worldLayout';
 import { EventBus } from '../core/EventBus';
 import { clamp } from '../core/math';
 import { Rng } from '../core/rng';
@@ -55,12 +59,24 @@ export class Simulation {
   readonly brain: CharacterBrain;
   readonly events: WorldEventSystem;
   readonly commands: CommandSystem;
+  /** Arrow keys + Space: the player walks Carley around and acts on what she is next to. */
+  readonly player: PlayerControl;
   /** When true Carley chooses her own activities (the old fully-autonomous mode). Default: the player decides. */
   autopilot = false;
   /** Sim seconds Carley has been kept reasonably happy in a row, and the best run so far. */
   happyStreak = 0;
   bestStreak = 0;
   readonly thoughts: ThoughtSystem;
+  /** The dalmatian, his mind, and the ball they play fetch with. */
+  readonly dog: Dog;
+  readonly dogBrain: DogBrain;
+  readonly ball = new Ball();
+  /** Debug: stop the dog's AI so animations can be previewed. */
+  dogFrozen = false;
+  /** A game of fetch in progress (Carley's reaction drives the phases, the dog's brain follows them). */
+  fetch: { active: boolean; phase: 'idle' | 'wait' | 'air' | 'chase' | 'return' | 'ready'; throws: number } = { active: false, phase: 'idle', throws: 0 };
+  /** A belly rub in progress. */
+  dogPet: { active: boolean; phase: 'idle' | 'come' | 'roll' | 'happy' } = { active: false, phase: 'idle' };
 
   /** Total simulated seconds. */
   time = 0;
@@ -74,10 +90,14 @@ export class Simulation {
   noNaturalWeather: boolean;
 
   lastDiscovery = 'Look what I found!';
+  /** True while the kitchen fridge door is open (Carley fetching her milk). */
+  fridgeOpen = false;
+  /** Which window the player asked her to look out of (consumed when the activity starts). */
+  windowHint: 'up' | 'down' | null = null;
   lastBloomPos: Vec2 | null = null;
   reactionData: Record<string, number | boolean> = {};
   /** Runtime stats for the debug panel / tests. */
-  stats = { mosquitoesSwatted: 0, mosquitoesShooed: 0, injuries: 0 };
+  stats = { mosquitoesSwatted: 0, mosquitoesShooed: 0, mosquitoesEaten: 0, injuries: 0 };
 
   private mosquitoPresenceCache = 0;
   private annoyanceCache = 0;
@@ -96,6 +116,7 @@ export class Simulation {
     this.emotion = new EmotionSystem(this.bus);
     this.plants = createPlants(this.rng);
     this.agent = new Carley(opts.body ?? new KinematicBody(360));
+    this.dog = new Dog(430);
     this.character = {
       needs: createInitialNeeds(),
       currentEmotion: 'neutral',
@@ -114,7 +135,9 @@ export class Simulation {
     this.brain = new CharacterBrain(this);
     this.events = new WorldEventSystem(this);
     this.commands = new CommandSystem(this);
+    this.player = new PlayerControl(this);
     this.thoughts = new ThoughtSystem(this);
+    this.dogBrain = new DogBrain(this);
     this.wireEvents();
     this.brain.resetToIdle();
   }
@@ -220,6 +243,38 @@ export class Simulation {
     return b;
   }
 
+  /** Carley throws the ball (a game of fetch). */
+  throwBall(dir: 1 | -1): void {
+    const a = this.agent;
+    this.ball.throwFrom(a.x + dir * 16, a.y - 78, dir, this.rng.range(270, 400), this.rng.range(520, 640));
+    this.fetch.phase = 'air';
+    this.fetch.throws++;
+    a.prop = null;
+    this.bus.emit('sfx', { id: 'throw', x: a.x });
+  }
+
+  /** The dog snapped a mosquito out of the air. */
+  eatMosquito(m: Mosquito): void {
+    if (m.state === 'dying') return;
+    m.eat();
+    this.stats.mosquitoesEaten++;
+    this.bus.emit('effect', { kind: 'puff', x: m.x, y: m.y });
+  }
+
+  nearestButterflyTo(x: number): Butterfly | null {
+    let best: Butterfly | null = null;
+    let bd = 1e9;
+    for (const b of this.butterflies) {
+      if (b.state === 'leaving') continue;
+      const d = Math.abs(b.x - x);
+      if (d < bd) {
+        bd = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
   killMosquito(m: Mosquito): void {
     if (m.state === 'dying') return;
     m.swat();
@@ -274,6 +329,11 @@ export class Simulation {
     bus.on('mosquitoRemoved', ({ cause }) => {
       if (cause === 'shooed') this.stats.mosquitoesShooed++;
     });
+    // Carley loves it when her little guard dog gets a bug
+    bus.on('dogCaught', () => {
+      if (this.brain.isSleeping) return;
+      this.brain.react('dogHero');
+    });
   }
 
   // ------------------------------------------------------------------ main update
@@ -298,8 +358,13 @@ export class Simulation {
     if (!this.noEvents) this.events.update(simDt);
 
     // --- character ---
+    // the bed is solid only while she is sleeping in it or still standing on it
+    BED_STATE.active = (this.brain.run?.activity.isSleep ?? false) || (this.agent.plane === 'upper' && this.agent.y < UPPER_Y - 4);
     this.agent.update(dt);
-    if (!this.aiFrozen) this.brain.update(dt, simDt);
+    const driving = this.player.update(dt);
+    if (!this.aiFrozen && !driving) this.brain.update(dt, simDt);
+    this.updateDog(dt);
+    if (this.fridgeOpen && this.brain.reaction?.def.id !== 'milk') this.fridgeOpen = false;
     this.updateFootsteps();
     this.perceive(dt);
     this.updateNeeds(dt, simDt);
@@ -319,6 +384,30 @@ export class Simulation {
     c.currentZone = this.zones.zoneAt(this.agent.x);
     c.currentEmotion = this.emotion.effective;
     c.recentMemories = this.memory.recent(8);
+  }
+
+  private updateDog(dt: number): void {
+    const d = this.dog;
+    // the games end when the reaction that drives them does (interrupted, stopped...)
+    const rid = this.brain.reaction?.def.id;
+    if (this.fetch.active && rid !== 'playFetch') {
+      this.fetch = { active: false, phase: 'idle', throws: 0 };
+      this.ball.state = 'held';
+      d.carrying = false;
+      this.bus.emit('dogPlay', { kind: 'fetch', started: false });
+    }
+    if (this.dogPet.active && rid !== 'petDog') {
+      this.dogPet = { active: false, phase: 'idle' };
+      this.bus.emit('dogPlay', { kind: 'pet', started: false });
+    }
+    if (!this.dogFrozen) this.dogBrain.update(dt);
+    d.update(dt);
+    this.ball.update(dt);
+    if (this.ball.bounced) this.bus.emit('sfx', { id: 'ballBounce', x: this.ball.x, volume: 0.6 });
+    if (d.pawStep) {
+      this.bus.emit('sfx', { id: 'pawstep', x: d.x, volume: d.speed > 180 ? 0.9 : 0.6 });
+      if (d.speed > 100 && this.rng.chance(0.4)) this.bus.emit('sfx', { id: 'jingle', x: d.x, volume: 0.6 });
+    }
   }
 
   private updateFootsteps(): void {
@@ -364,7 +453,9 @@ export class Simulation {
     this.perceptionTimer = 0.25;
     if (this.brain.isSleeping || !this.isOutdoors) return;
     const m = this.nearestMosquito(MOSQUITO.notifyRadius);
-    if (m) this.brain.react('mosquito');
+    // when the dog is on the case Carley lets him handle it
+    const dogOnIt = m !== null && this.dogBrain.mode === 'guard' && Math.abs(this.dog.x - m.x) < 230 && this.dog.level === 'ground';
+    if (m && !dogOnIt) this.brain.react('mosquito');
     const b = this.nearestButterfly(230);
     if (b && this.character.needs.irritation < 40 && this.rng.chance(0.25 * (0.4 + this.personality.curiosity))) this.brain.react('butterfly');
   }

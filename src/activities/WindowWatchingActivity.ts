@@ -1,10 +1,14 @@
 import { hourBump } from '../core/math';
-import { WINDOW_RECT } from '../config/worldLayout';
+import { getLocation, getWindow } from '../config/worldLayout';
+import type { Level } from '../core/types';
 import type { Simulation } from '../sim/Simulation';
 import type { Step } from '../systems/StepRunner';
-import { Activity, type ActivityRun } from './Activity';
+import { Activity, goTo, type ActivityRun } from './Activity';
 
-/** Standing at the window watching the weather (especially rain) or the sunset. */
+type WindowId = 'up' | 'down';
+const SPOT: Record<WindowId, string> = { up: 'windowUp', down: 'windowDown' };
+
+/** Standing at a window watching the weather (especially rain) or the sunset: the bedroom window or the kitchen one. */
 export class WindowWatchingActivity extends Activity {
   readonly id = 'windowWatching' as const;
 
@@ -20,20 +24,43 @@ export class WindowWatchingActivity extends Activity {
     return 0.1 + rain + sunset + recentRain + p.curiosity * 0.1;
   }
 
-  override navigateX(): number {
-    return 288;
+  /** Which window she uses for this run: the one on her own floor most of the time, the sky-view one at dusk. */
+  private windowFor(sim: Simulation, run: ActivityRun): WindowId {
+    let w = run.data.window as WindowId | undefined;
+    if (!w && sim.windowHint) {
+      w = sim.windowHint;
+      sim.windowHint = null;
+      run.data.window = w;
+    }
+    if (!w) {
+      const here: WindowId = sim.agent.level === 'upper' ? 'up' : 'down';
+      const dusk = sim.clock.hour > 17 || sim.clock.daylight < 0.4;
+      const other: WindowId = here === 'up' ? 'down' : 'up';
+      w = sim.rng.chance(dusk && here === 'down' ? 0.5 : 0.22) ? other : here;
+      run.data.window = w;
+    }
+    return w;
   }
 
-  override buildPrepare(): Step[] {
-    return [{ moveTo: { x: 288, tolerance: 4 }, label: 'to window' }, { action: 'turn', duration: 0.3, faceDir: 1 }];
+  override navigateX(sim: Simulation, run: ActivityRun): number {
+    return getLocation(SPOT[this.windowFor(sim, run)]).x;
   }
 
-  override buildResume(): Step[] {
-    return this.buildPrepare();
+  override navigateLevel(sim: Simulation, run: ActivityRun): Level {
+    return getLocation(SPOT[this.windowFor(sim, run)]).level;
+  }
+
+  override buildPrepare(sim: Simulation, run: ActivityRun): Step[] {
+    return [goTo(SPOT[this.windowFor(sim, run)], 4, 'to window'), { action: 'turn', duration: 0.3, faceDir: 1 }];
+  }
+
+  override buildResume(sim: Simulation, run: ActivityRun): Step[] {
+    return this.buildPrepare(sim, run);
   }
 
   override nextPerformSteps(sim: Simulation, run: ActivityRun): Step[] {
-    const gaze = { x: WINDOW_RECT.x + WINDOW_RECT.w / 2, y: WINDOW_RECT.y + WINDOW_RECT.h / 2 };
+    const win = getWindow(this.windowFor(sim, run));
+    const gaze = { x: win.x + win.w / 2, y: win.y + win.h / 2 };
     const raining = sim.weather.raining;
     const emotion = raining ? ('relaxed' as const) : sim.clock.hour > 17 ? ('happy' as const) : ('curious' as const);
     const steps: Step[] = [{ action: 'windowWatch', duration: sim.rng.range(5, 9), face: { emotion, gaze }, label: 'watching outside' }];

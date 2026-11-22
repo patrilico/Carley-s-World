@@ -655,6 +655,25 @@ export class CarleyRenderer {
         g.fillCircle(5, -4, 2.8);
         break;
       }
+      case 'ball': {
+        // the dog's favourite red ball, held in her right hand
+        g.translateCanvas(R.wr.x + 1, R.wr.y + 1);
+        g.fillStyle(COL.outline, 1);
+        g.fillCircle(0, 0, 10.6);
+        g.fillStyle(0xf08a7a, 1);
+        g.fillCircle(0, 0, 8.8);
+        g.lineStyle(2.4, 0xfdf1e4, 1);
+        g.beginPath();
+        g.arc(0, 0, 5.4, -0.2, 2.2, false);
+        g.strokePath();
+        g.fillStyle(0xffffff, 0.7);
+        g.fillCircle(-3.2, -3.4, 2.3);
+        g.fillStyle(COL.outline, 1);
+        g.fillCircle(6, 4.5, 3.6);
+        g.fillStyle(COL.skin, 1);
+        g.fillCircle(6, 4.5, 2.5);
+        break;
+      }
       case 'book': {
         const mx = (L.wr.x + R.wr.x) / 2;
         const my = (L.wr.y + R.wr.y) / 2 + 4;

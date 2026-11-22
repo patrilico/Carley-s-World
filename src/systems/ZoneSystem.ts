@@ -1,5 +1,5 @@
-import { LOCATIONS, WALL_LEFT_X, WALL_OUTER_X, WORLD_RIGHT_X, ZONE_SPLIT_X, clampToWorld, getLocation, isOnSolid } from '../config/worldLayout';
-import type { ActivityLocation, Zone } from '../core/types';
+import { LOCATIONS, WALL_LEFT_X, WALL_OUTER_X, WORLD_RIGHT_X, ZONE_SPLIT_X, getLocation, standableX } from '../config/worldLayout';
+import type { ActivityLocation, Level, Zone } from '../core/types';
 
 /**
  * Spatial rules for the whole world. Every environmental system asks this class whether an effect applies at
@@ -55,11 +55,8 @@ export class ZoneSystem {
     return true;
   }
 
-  /** Nearest spot a character can legally stand on the floor (used when restoring saves). */
-  nearestFloorStandX(x: number): number {
-    let nx = clampToWorld(x);
-    if (isOnSolid(nx)) nx = nx < 300 ? 222 : nx > 900 ? 960 : nx;
-    if (isOnSolid(nx)) nx = 360;
-    return nx;
+  /** Nearest spot a character can legally stand on bare floor of this level (used when restoring saves). */
+  nearestFloorStandX(x: number, level: Level = 'ground'): number {
+    return standableX(x, level);
   }
 }

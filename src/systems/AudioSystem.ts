@@ -46,7 +46,8 @@ export class AudioSystem {
       if (document.hidden) this.ctx.suspend().catch(() => {});
       else if (this.unlocked) this.ctx.resume().catch(() => {});
     });
-    sim.bus.on('sfx', (e) => this.play(e.id, e.volume ?? 1));
+    // sounds far from Carley are a little quieter (the dog may be out in the garden)
+    sim.bus.on('sfx', (e) => this.play(e.id, (e.volume ?? 1) * (e.x === undefined ? 1 : clamp(1.15 - Math.abs(e.x - sim.agent.x) / 1500, 0.5, 1))));
   }
 
   get ready(): boolean {
@@ -388,7 +389,7 @@ export class AudioSystem {
   play(id: SfxId, volume = 1): void {
     if (!this.ctx || !this.unlocked || this.ctx.state !== 'running') return;
     const now = this.ctx.currentTime;
-    const gap = id === 'footstep' ? 0.16 : id === 'sparkle' ? 0.05 : 0.12;
+    const gap = id === 'footstep' ? 0.16 : id === 'sparkle' ? 0.05 : id === 'pawstep' ? 0.07 : id === 'jingle' ? 0.11 : 0.12;
     if (now - (this.lastSfx.get(id) ?? -1) < gap) return;
     this.lastSfx.set(id, now);
     const v = volume;
@@ -437,6 +438,79 @@ export class AudioSystem {
       case 'brush': this.noiseBurst('sfx', 0.15, 0.03, 3000, 1, 'bandpass'); break;
       case 'phone':
         for (let i = 0; i < 3; i++) this.tone('sfx', 1000 + (i % 2) * 90, 0.12, 0.05, 'sine', undefined, 0, i * 0.18);
+        break;
+      default:
+        this.dogSound(id, v);
+    }
+  }
+
+  /** Puppy noises, all synthesized: tiny voiced yips through vowel filters, breath and paw taps from filtered noise. */
+  private dogSound(id: SfxId, v: number): void {
+    const p = 0.93 + Math.random() * 0.14; // every bark is a little different
+    switch (id) {
+      case 'bark':
+        // a small, round "wuff!" with a soft puff of breath
+        this.voice(560 * p, 0.13, 0.2 * v, 'ah', 330 * p, 18);
+        this.voice(1120 * p, 0.08, 0.05 * v, 'eh', 700 * p);
+        this.noiseBurst('voice', 0.07, 0.05 * v, 1500, 0.9, 'bandpass');
+        break;
+      case 'yip':
+        this.voice(880 * p, 0.07, 0.17 * v, 'eh', 640 * p);
+        this.voice(1010 * p, 0.07, 0.15 * v, 'eh', 720 * p, 0, 0.1);
+        break;
+      case 'yipHappy':
+        [800, 920, 1060].forEach((f, i) => this.voice(f * p, 0.07, 0.16 * v, 'ee', f * 0.76 * p, 10, i * 0.1));
+        break;
+      case 'whine':
+        this.voice(520, 0.42, 0.12 * v, 'ee', 920, 14);
+        this.voice(900, 0.36, 0.11 * v, 'oo', 520, 16, 0.42);
+        break;
+      case 'pant':
+        for (let i = 0; i < 3; i++) this.noiseBurst('voice', 0.12, 0.035 * v, 2300, 1.2, 'bandpass', i * 0.2);
+        break;
+      case 'sniff':
+        this.noiseBurst('sfx', 0.08, 0.05 * v, 2600, 1.4, 'bandpass', 0, 3600);
+        this.noiseBurst('sfx', 0.08, 0.045 * v, 2800, 1.4, 'bandpass', 0.13, 3800);
+        break;
+      case 'snore':
+        // a teeny rumbling in-and-out breath
+        this.noiseBurst('voice', 0.7, 0.045 * v, 520, 0.8, 'lowpass', 0, 260);
+        this.tone('voice', 95, 0.55, 0.03 * v, 'triangle', 75, 5);
+        this.noiseBurst('voice', 0.55, 0.03 * v, 700, 0.8, 'lowpass', 0.95, 400);
+        break;
+      case 'pawstep':
+        this.noiseBurst('sfx', 0.03, 0.04 * v, 3400, 2, 'bandpass');
+        this.tone('sfx', 190 * p, 0.035, 0.03 * v, 'sine', 110);
+        break;
+      case 'jingle':
+        // the tag on his collar
+        this.tone('sfx', 3100 * p, 0.13, 0.025 * v, 'sine');
+        this.tone('sfx', 3900 * p, 0.12, 0.022 * v, 'sine', undefined, 0, 0.045);
+        break;
+      case 'dogShake':
+        for (let i = 0; i < 7; i++) this.noiseBurst('sfx', 0.05, 0.05 * v, 800 + (i % 2) * 400, 2.5, 'bandpass', i * 0.055);
+        this.tone('sfx', 3300, 0.1, 0.03 * v, 'sine', undefined, 0, 0.05);
+        this.tone('sfx', 3900, 0.1, 0.03 * v, 'sine', undefined, 0, 0.2);
+        break;
+      case 'dogSigh':
+        this.voice(300, 0.65, 0.07 * v, 'oh', 190, 6);
+        this.noiseBurst('voice', 0.7, 0.03 * v, 1100, 0.7, 'lowpass', 0, 400);
+        break;
+      case 'chomp':
+        this.noiseBurst('sfx', 0.05, 0.1 * v, 2400, 1, 'highpass');
+        this.tone('sfx', 520, 0.07, 0.1 * v, 'sine', 210);
+        this.tone('sfx', 1300, 0.06, 0.05 * v, 'sine', 700, 0, 0.05);
+        break;
+      case 'ballBounce':
+        this.tone('sfx', 320 * p, 0.1, 0.12 * v, 'sine', 150);
+        break;
+      case 'throw':
+        this.noiseBurst('sfx', 0.28, 0.05 * v, 600, 1, 'bandpass', 0, 2600);
+        break;
+      case 'tailThump':
+        this.tone('sfx', 100, 0.09, 0.1 * v, 'sine', 55);
+        break;
+      default:
         break;
     }
   }

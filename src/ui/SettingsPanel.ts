@@ -112,7 +112,9 @@ export class SettingsPanel {
     help.className = 'help';
     help.innerHTML =
       '<b>How to play:</b> keep Carley happy! Her six meters (Rest, Fun, Social, Relax, Garden, Tummy) drain slowly and only fill while she does something for them. ' +
-      'Use the buttons at the bottom (keys 1-8) to tell her what to do - click again to stop. The Auto button lets her choose for herself. <b>Space</b> pauses, <b>F3</b> opens the debug panel.';
+      'Walk her around with the <b>arrow keys</b> (hold <b>Shift</b> to run) and press <b>Space</b> when you are next to something to use it - press Space again to stop. ' +
+      'At the foot of the stairs press <b>&uarr;</b> to climb, at the top press <b>&darr;</b> to go down. Pet Pongo indoors, play fetch with him in the garden. ' +
+      '<b>A</b> lets Carley choose for herself, <b>P</b> pauses, <b>F3</b> opens the debug panel.';
     card.appendChild(help);
     this.root.appendChild(card);
   }

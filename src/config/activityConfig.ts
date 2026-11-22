@@ -65,7 +65,7 @@ export const ACTIVITY_LOCATION: Record<ActivityType, string> = {
   phone: 'windowTable',
   painting: 'easel',
   sleeping: 'bedside',
-  windowWatching: 'windowTable'
+  windowWatching: 'windowUp'
 };
 
 export const ACTIVITY_LABEL: Record<ActivityType, string> = {

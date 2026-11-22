@@ -1,5 +1,5 @@
 import type { Carley, FaceDirective } from '../entities/Carley';
-import type { ActionId, EmotionType, Posture, PropId } from '../core/types';
+import type { ActionId, EmotionType, Level, Posture, PropId } from '../core/types';
 import type { SfxId } from '../core/EventBus';
 import type { Simulation } from '../sim/Simulation';
 import { ACTION_DURATION } from './AnimationController';
@@ -15,7 +15,8 @@ export interface Step {
   action?: ActionId;
   /** Real seconds. For `until` steps this is a timeout. */
   duration?: number;
-  moveTo?: { x: number; run?: boolean; tolerance?: number };
+  /** `level` = the floor to end up on (default: the floor she is on); she takes the stairs to change floors. */
+  moveTo?: { x: number; run?: boolean; tolerance?: number; level?: Level };
   until?: (env: StepEnv, t: number) => boolean;
   face?: FaceDirective;
   /** Prop held from now on (undefined = unchanged). */
@@ -39,6 +40,16 @@ const STAND_FROM: Record<Posture, { action: ActionId; posture: Posture }> = {
   lying: { action: 'getUp', posture: 'standing' },
   kneeling: { action: 'kneelUp', posture: 'standing' }
 };
+
+/** Which walking animation fits her mood and health right now. */
+export function movementAction(sim: Simulation, run: boolean): ActionId {
+  if (sim.character.needs.pain >= 25) return 'cautiousWalk';
+  const e = sim.emotion.effective;
+  if (!run && (e === 'sad' || e === 'tired' || e === 'hurt')) return 'sadWalk';
+  return run ? 'run' : 'walk';
+}
+
+export { STAND_FROM };
 
 /** Executes a queue of steps; shared by activities and reactions. */
 export class StepRunner {
@@ -90,7 +101,7 @@ export class StepRunner {
       if (step.moveTo) {
         this.moveTime += dt;
         const run = !!step.moveTo.run;
-        const arrived = env.agent.moveToward(step.moveTo.x, run, step.moveTo.tolerance ?? 6);
+        const arrived = env.agent.moveToward(step.moveTo.x, run, step.moveTo.tolerance ?? 6, step.moveTo.level);
         // movement animation follows speed/emotion
         env.agent.play(this.movementAction(env, run));
         if (arrived) done = true;
@@ -114,11 +125,7 @@ export class StepRunner {
   }
 
   private movementAction(env: StepEnv, run: boolean): ActionId {
-    const needs = env.sim.character.needs;
-    if (needs.pain >= 25) return 'cautiousWalk';
-    const e = env.sim.emotion.effective;
-    if (!run && (e === 'sad' || e === 'tired' || e === 'hurt')) return 'sadWalk';
-    return run ? 'run' : 'walk';
+    return movementAction(env.sim, run);
   }
 
   private begin(step: Step, env: StepEnv): void {

@@ -266,6 +266,14 @@ const KF_PHONE_END = makeKf([
   [0.8, { aRs: 0.7, aRe: 0.2, torso: 0.1, headY: 1 }],
   [1.1, { aRs: 0.16, aRe: 0, torso: 0 }]
 ]);
+// winding up and throwing the ball with the right arm
+const KF_THROW = makeKf([
+  [0, {}],
+  [0.22, { aRs: -0.55, aRe: 0.9, torso: -0.12, ox: -3, aLs: 0.7, headTilt: -0.04 }],
+  [0.42, { aRs: 2.3, aRe: 0.1, torso: 0.18, ox: 4, aLs: 0.4, headTilt: 0.06, oy: 1 }],
+  [0.6, { aRs: 2.0, aRe: 0.2, torso: 0.1, ox: 3, aLs: 0.35 }],
+  [1.0, { aRs: 0.5, aRe: 0.3, torso: 0.02, ox: 0 }]
+]);
 const KF_HEALED = makeKf([
   [0, {}],
   [0.3, { oy: -5, sy: 1.04, aLs: 1.1, aRs: 1.1, aLe: 0.4, aRe: 0.4, headTilt: -0.12, headY: -2, torso: -0.06 }],
@@ -281,7 +289,8 @@ export const ACTION_DURATION: Partial<Record<ActionId, number>> & Record<string,
   hairAdjust: 1.4, shakeOff: 1.1, wipeBrow: 1.2, wave: 1.7, excitedBounce: 1.6, laugh: 1.6, tinyDance: 2, dance: 3,
   lookAround: 2.4, examine: 2.2, point: 1.2, comfort: 1.4, sitStretch: 2.6, hum: 3, stomp: 1.2, crossArms: 1.6, cry: 2.5,
   holdHand: 2.5, takeGlass: 1, drinkMilk: 2.8, smile: 1.5, smileToSelf: 2, contentClose: 2, frown: 1.2, paintAdmire: 2.2, paintFrustrated: 1.8,
-  watchSky: 2.5, lookUp: 1.2, inspectFlower: 2.2, sunAdjust: 1.8, phoneLaugh: 2, idle: 1, stand: 1
+  watchSky: 2.5, lookUp: 1.2, inspectFlower: 2.2, sunAdjust: 1.8, phoneLaugh: 2, idle: 1, stand: 1,
+  openFridge: 1.3, callDog: 1.4, petDog: 3, cuddleDog: 2.4, throwBall: 1
 };
 
 type ActionFn = (c: ActionCtx) => Pose;
@@ -536,6 +545,35 @@ export const ACTIONS: Record<ActionId, ActionFn> = {
       aRs: 1.2 + lift * 0.75, aRe: 1.4 + lift * 0.9, aLs: 0.3, torso: -0.04 - lift * 0.04, headTilt: -0.05 - lift * 0.2, headY: -lift * 2.5,
       propRot: -(0.1 + lift * 0.75), aux: clamp01((c.t - 0.6) / 2), oy: -gulp * 0.8
     });
+  },
+  throwBall: (c) => KF_THROW(c.t),
+  // reaching up to the fridge handle and pulling the door open
+  openFridge: (c) => {
+    const u = clamp01(c.t / 1.3);
+    const reach = Math.sin(Math.min(1, u * 1.8) * Math.PI / 2);
+    const pull = smoothstep(0.4, 0.85, u);
+    return breathe(build({ aRs: 0.9 + reach * 0.55, aRe: 0.2 + reach * 0.15, aLs: 0.2, torso: 0.05 - pull * 0.09, headTilt: 0.05, headY: -1.5, ox: -pull * 3 }), c, 0.5);
+  },
+
+  // ---------------- the dog ----------------
+  // patting her knees to call the pup
+  callDog: (c) => {
+    const s = Math.sin(c.t * 9);
+    return breathe(build({ torso: 0.13, headY: 1, headTilt: 0.1, aLs: 0.7 + s * 0.3, aLe: 0.45, aRs: 0.7 - s * 0.3, aRe: 0.45, lLk: 0.18, lRk: 0.18, oy: 2 + Math.abs(s) * 0.6 }), c, 0.4);
+  },
+  // kneeling and stroking the dog's back
+  petDog: (c) => {
+    const s = Math.sin(c.t * 4.4);
+    const p = build({ ...KNEEL, torso: 0.36, headTilt: 0.14, headY: 2.5, aRs: 0.85 + s * 0.15, aRe: 0.3 + s * 0.12, aLs: 0.55, aLe: 0.5, ox: 3 + s * 1.4 });
+    p.oy += Math.sin(c.breath) * 0.5;
+    return p;
+  },
+  // a big kneeling hug for the pup
+  cuddleDog: (c) => {
+    const s = Math.sin(c.t * 2.6);
+    const p = build({ ...KNEEL, torso: 0.42 + s * 0.02, headTilt: 0.22, headY: 3.5, aRs: 1.05, aRe: 1.15, aLs: 0.95, aLe: 1.2, ox: 4 + s * 0.8 });
+    p.oy += Math.sin(c.breath) * 0.5;
+    return p;
   }
 } as Record<ActionId, ActionFn>;
 
@@ -601,6 +639,12 @@ export class AnimationController {
 
     const fn = ACTIONS[action] ?? ACTIONS.idle;
     const target = fn(c);
+    // climbing: lean into the stairs and lift the knees a little higher
+    if (agent.body.plane === 'stairs' && moving) {
+      target.torso += 0.09;
+      target.lLk += 0.2;
+      target.lRk += 0.2;
+    }
     const upright = agent.posture === 'standing' || agent.posture === 'sitting';
     const rate = BLEND_RATE[action] ?? 11;
     const p = this.pose;

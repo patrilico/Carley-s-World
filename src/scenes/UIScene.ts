@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
-import { COMMANDS } from '../systems/CommandSystem';
+import { GAME_CONFIG } from '../config/gameConfig';
 import type { CarleyView } from '../render/CarleyView';
 import type { Simulation } from '../sim/Simulation';
 import type { AudioSystem } from '../systems/AudioSystem';
+import type { PlayerKeys } from '../systems/PlayerControl';
 import { SaveSystem, type Settings } from '../systems/SaveSystem';
 import { DebugPanel } from '../ui/DebugPanel';
+import { ControlsHint, PromptBubble, Toast } from '../ui/InteractionHud';
 import { MoodMeter, UI_FONT } from '../ui/MoodMeter';
-import { ActionToolbar } from '../ui/ActionToolbar';
 import { MeterPanel } from '../ui/MeterPanel';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { StatusDisplay } from '../ui/StatusDisplay';
@@ -14,21 +15,28 @@ import { ThoughtBubble } from '../ui/ThoughtBubble';
 import type { WorldScene } from './WorldScene';
 import { heart } from '../ui/icons';
 
-/** All 2D UI: mood meter, status, meters, command bar, thought bubbles, splash. Reads the simulation; never owns it. */
+const KEY_MAP: Record<string, keyof PlayerKeys> = {
+  ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Shift: 'run'
+};
+
+/** All 2D UI: mood meter, status, meters, interaction prompt, thought bubbles, splash. Reads the simulation; never owns it. */
 export class UIScene extends Phaser.Scene {
   private sim!: Simulation;
   private audio!: AudioSystem;
   private world!: WorldScene;
   private mood!: MoodMeter;
   private status!: StatusDisplay;
-  private toolbar!: ActionToolbar;
   private meters!: MeterPanel;
   private bubble!: ThoughtBubble;
+  private prompt!: PromptBubble;
+  private toast!: Toast;
+  private hint!: ControlsHint;
   private debug!: DebugPanel;
   private settingsPanel!: SettingsPanel;
   private time0 = 0;
   private hudAcc = 0;
   private cursorPointer = false;
+  private keysUsed = false;
   private splash: { g: Phaser.GameObjects.Graphics; texts: Phaser.GameObjects.Text[]; alpha: number; gone: boolean } | null = null;
   private pausedBeforeSettings = false;
 
@@ -43,11 +51,14 @@ export class UIScene extends Phaser.Scene {
     const view = this.registry.get('carleyView') as CarleyView;
     const settings = this.registry.get('settings') as Settings;
 
+    this.buildDock();
     this.mood = new MoodMeter(this);
     this.status = new StatusDisplay(this);
     this.meters = new MeterPanel(this);
-    this.toolbar = new ActionToolbar(this, this.sim);
-    this.bubble = new ThoughtBubble(this, this.sim, () => view.world.head);
+    this.prompt = new PromptBubble(this);
+    this.toast = new Toast(this);
+    this.hint = new ControlsHint(this);
+    this.bubble = new ThoughtBubble(this, this.sim, () => ({ x: view.world.head.x, y: view.world.head.y - GAME_CONFIG.worldScrollY }));
     this.debug = new DebugPanel(this.sim);
     this.settingsPanel = new SettingsPanel(
       settings,
@@ -57,13 +68,18 @@ export class UIScene extends Phaser.Scene {
         if (open) {
           this.pausedBeforeSettings = this.sim.paused;
           this.sim.paused = true;
+          this.sim.player.releaseAll();
         } else this.sim.paused = this.pausedBeforeSettings;
       }
     );
 
     this.input.setTopOnly(false);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => this.onPointerDown(p));
-    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => this.onKey(e));
+    // the arrow keys and Space belong to the game (no page scrolling)
+    this.input.keyboard?.addCapture([37, 38, 39, 40, 32]);
+    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => this.onKeyDown(e));
+    this.input.keyboard?.on('keyup', (e: KeyboardEvent) => this.onKeyUp(e));
+    window.addEventListener('blur', () => this.sim.player.releaseAll());
     this.buildSplash();
   }
 
@@ -74,48 +90,79 @@ export class UIScene extends Phaser.Scene {
       return;
     }
     if (this.settingsPanel.isOpen) return;
-    const x = p.x;
-    const y = p.y;
-    const hud = this.status.hitTest(x, y);
+    const hud = this.status.hitTest(p.x, p.y);
     if (hud === 'pause') {
       this.sim.paused = !this.sim.paused;
       this.audio.click();
-      return;
-    }
-    if (hud === 'auto') {
-      this.sim.autopilot = !this.sim.autopilot;
-      this.toolbar.toast(this.sim.autopilot ? 'Autopilot on: Carley chooses for herself' : 'Autopilot off: you decide', true);
+    } else if (hud === 'auto') {
+      this.toggleAutopilot();
       this.audio.click();
-      return;
-    }
-    if (hud === 'settings') {
+    } else if (hud === 'settings') {
       this.audio.click();
       this.settingsPanel.open();
-      return;
-    }
-    const i = this.toolbar.hitTest(x, y);
-    if (i >= 0) {
-      this.audio.click();
-      this.toolbar.press(i);
-      return;
     }
   }
 
-  private onKey(e: KeyboardEvent): void {
+  private toggleAutopilot(): void {
+    this.sim.autopilot = !this.sim.autopilot;
+    this.sim.player.releaseAll();
+    this.toast.show(this.sim.autopilot ? 'Autopilot on: Carley chooses for herself (press A to take over)' : 'Autopilot off: you steer Carley with the arrow keys', true);
+  }
+
+  private onKeyDown(e: KeyboardEvent): void {
     if (this.splash && !this.splash.gone && (e.key === ' ' || e.key === 'Enter')) {
       this.dismissSplash();
       return;
     }
-    if (e.key === ' ' && !this.settingsPanel.isOpen) {
-      this.sim.paused = !this.sim.paused;
+    if (this.settingsPanel.isOpen) return;
+    const k = KEY_MAP[e.key];
+    if (k) {
+      this.sim.player.setKey(k, true);
+      if (k !== 'run') this.keysUsed = true;
       e.preventDefault();
-    } else if (/^[1-9]$/.test(e.key) && !this.settingsPanel.isOpen) {
-      const idx = Number(e.key) - 1;
-      if (idx < COMMANDS.length) {
-        this.audio.click();
-        this.toolbar.press(idx);
-      }
+      return;
     }
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (e.repeat || (this.splash && !this.splash.gone)) return;
+      const res = this.sim.player.action();
+      this.keysUsed = true;
+      if (res) {
+        this.toast.show(res.message, res.ok);
+        this.audio.click();
+      }
+    } else if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+      this.sim.paused = !this.sim.paused;
+      if (this.sim.paused) this.sim.player.releaseAll();
+    } else if (e.key === 'a' || e.key === 'A') {
+      this.toggleAutopilot();
+    }
+  }
+
+  private onKeyUp(e: KeyboardEvent): void {
+    const k = KEY_MAP[e.key];
+    if (k) this.sim.player.setKey(k, false);
+  }
+
+  /** A soft scalloped shelf along the bottom of the screen that the meters sit on. */
+  private buildDock(): void {
+    const g = this.add.graphics().setDepth(98);
+    const y = GAME_CONFIG.dockY;
+    g.fillStyle(0x4a3560, 0.18);
+    g.fillRect(0, y - 8, 1280, 8);
+    g.fillStyle(0xf6e4e4, 1);
+    g.fillRect(0, y, 1280, 720 - y);
+    g.fillStyle(0xfbeee9, 1);
+    g.fillRect(0, y, 1280, 22);
+    g.fillStyle(0xf6e4e4, 1);
+    for (let x = 0; x < 1300; x += 32) g.fillCircle(x, y + 20, 18);
+    g.lineStyle(3, 0x6b5584, 1);
+    g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x < 1300; x += 32) g.arc(x + 16, y + 2, 16, Math.PI, 0, true);
+    g.strokePath();
+    g.fillStyle(0xe9c7c9, 0.55);
+    for (let x = 14; x < 1280; x += 46) g.fillCircle(x, 716, 2.4);
   }
 
   private buildSplash(): void {
@@ -124,10 +171,14 @@ export class UIScene extends Phaser.Scene {
     const style = (size: number, color: string, extra: object = {}) => ({ fontFamily: UI_FONT, fontSize: `${size}px`, fontStyle: 'bold', color, align: 'center', ...extra });
     const title = this.add.text(640, 270, "Carley's World", style(64, '#e99f8a', { stroke: '#ffffff', strokeThickness: 10 })).setOrigin(0.5).setDepth(201);
     const sub2 = this.add
-      .text(640, 392, saved ? `Welcome back! Day ${this.sim.clock.day + 1} is waiting.` : 'Keep her happy: tell her what she needs.', style(18, '#866b5e'))
+      .text(
+        640, 392,
+        (saved ? `Welcome back! Day ${this.sim.clock.day + 1} is waiting.\n` : '') + 'Walk Carley around with the arrow keys.\nWalk up to things and press Space to do them!',
+        style(18, '#866b5e')
+      )
       .setOrigin(0.5)
       .setDepth(201);
-    const go = this.add.text(640, 470, 'Click anywhere to begin', style(26, '#4a3560', { stroke: '#ffffff', strokeThickness: 6 })).setOrigin(0.5).setDepth(201);
+    const go = this.add.text(640, 482, 'Click anywhere to begin', style(26, '#4a3560', { stroke: '#ffffff', strokeThickness: 6 })).setOrigin(0.5).setDepth(201);
     this.splash = { g, texts: [title, sub2, go], alpha: 1, gone: false };
   }
 
@@ -149,11 +200,15 @@ export class UIScene extends Phaser.Scene {
       this.mood.update(hd, this.sim, this.time0);
       this.status.update(hd, this.sim, this.time0);
       this.meters.update(hd, this.sim);
-      this.toolbar.update(hd, { x: ptr.x, y: ptr.y });
     }
     this.bubble.update(dt);
+    const a = this.sim.agent;
+    const splashUp = !!this.splash && !this.splash.gone;
+    this.prompt.update(dt, splashUp || this.sim.paused ? null : this.sim.player.prompt, { x: a.x, y: a.y - GAME_CONFIG.worldScrollY });
+    this.toast.update(dt);
+    this.hint.update(dt, this.keysUsed);
     this.debug.update(dt);
-    const over = !!hud || this.toolbar.hover >= 0;
+    const over = !!hud;
     if (over !== this.cursorPointer) {
       this.cursorPointer = over;
       this.input.setDefaultCursor(over ? 'pointer' : 'default');

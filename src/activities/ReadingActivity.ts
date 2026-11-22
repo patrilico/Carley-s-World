@@ -1,8 +1,7 @@
 import { clamp01, hourBump } from '../core/math';
-import { getLocation } from '../config/worldLayout';
 import type { Simulation } from '../sim/Simulation';
 import type { Step } from '../systems/StepRunner';
-import { Activity, gazeNear, propAt, type ActivityRun } from './Activity';
+import { Activity, gazeNear, goTo, propAt, type ActivityRun } from './Activity';
 
 /** Curled up in the reading chair with a book. */
 export class ReadingActivity extends Activity {
@@ -32,7 +31,7 @@ export class ReadingActivity extends Activity {
   }
 
   override buildResume(): Step[] {
-    return [{ moveTo: { x: getLocation('readingChair').x } }, ...this.buildPrepare()];
+    return [goTo('readingChair'), ...this.buildPrepare()];
   }
 
   override nextPerformSteps(sim: Simulation, run: ActivityRun): Step[] {

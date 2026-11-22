@@ -1,8 +1,14 @@
 import { ACTIVITY_LOCATION, ACTIVITY_TUNING, type ActivityNeedsEffect } from '../config/activityConfig';
 import { getLocation } from '../config/worldLayout';
-import type { ActivityType, PropId, Vec2 } from '../core/types';
+import type { ActivityType, Level, PropId, Vec2 } from '../core/types';
 import type { Simulation } from '../sim/Simulation';
 import type { Step, StepEnv } from '../systems/StepRunner';
+
+/** A step that walks to a named location, on the floor it belongs to. */
+export function goTo(locationId: string, tolerance = 6, label?: string): Step {
+  const l = getLocation(locationId);
+  return { moveTo: { x: l.x, tolerance, level: l.level }, label: label ?? `go to ${locationId}` };
+}
 
 export type ActivityPhase = 'navigate' | 'prepare' | 'perform' | 'complete';
 
@@ -56,6 +62,16 @@ export abstract class Activity implements ActivityDefinition {
   /** x position Carley walks to before starting. */
   navigateX(_ctx: Simulation, _run: ActivityRun): number {
     return getLocation(this.locationId).x;
+  }
+
+  /** Floor that position is on (she takes the stairs when it differs from hers). */
+  navigateLevel(_ctx: Simulation, _run: ActivityRun): Level {
+    return getLocation(this.locationId).level;
+  }
+
+  /** The walk-to-location step used to start (and to resume) the activity. */
+  navigateStep(ctx: Simulation, run: ActivityRun, label?: string): Step {
+    return { moveTo: { x: this.navigateX(ctx, run), tolerance: 6, level: this.navigateLevel(ctx, run) }, label: label ?? `go to ${this.locationId}` };
   }
 
   buildPrepare(_ctx: Simulation, _run: ActivityRun): Step[] {

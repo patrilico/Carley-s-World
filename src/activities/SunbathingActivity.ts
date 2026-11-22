@@ -3,7 +3,7 @@ import { ACTIVITY_TUNING, type ActivityNeedsEffect } from '../config/activityCon
 import { getLocation } from '../config/worldLayout';
 import type { Simulation } from '../sim/Simulation';
 import type { Step } from '../systems/StepRunner';
-import { Activity, type ActivityRun } from './Activity';
+import { Activity, goTo, type ActivityRun } from './Activity';
 
 const SUN_FACE = { emotion: 'relaxed' as const, eyesClosed: true };
 
@@ -51,7 +51,7 @@ export class SunbathingActivity extends Activity {
   }
 
   override buildResume(sim: Simulation): Step[] {
-    return [{ moveTo: { x: getLocation(this.locationId).x, tolerance: 10 } }, ...this.buildPrepare(sim)];
+    return [goTo(this.locationId, 10), ...this.buildPrepare(sim)];
   }
 
   override nextPerformSteps(sim: Simulation, run: ActivityRun): Step[] {
