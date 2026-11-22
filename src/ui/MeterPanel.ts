@@ -17,7 +17,7 @@ export class MeterPanel {
   private lowState: boolean[] = METERS.map(() => false);
   private t = 0;
 
-  constructor(scene: Phaser.Scene, private x = 418, private y = 14) {
+  constructor(scene: Phaser.Scene, private x = 418, private y = 626) {
     this.g = scene.add.graphics().setDepth(100);
     METERS.forEach((m) => {
       this.labels.push(scene.add.text(0, 0, m.label, { fontFamily: UI_FONT, fontSize: '12px', fontStyle: 'bold', color: '#4a3560' }).setDepth(101));

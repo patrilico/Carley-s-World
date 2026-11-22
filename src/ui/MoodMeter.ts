@@ -48,7 +48,7 @@ export class MoodMeter {
   private lastLabel = '';
   private blink = 0;
 
-  constructor(scene: Phaser.Scene, private x = 18, private y = 14) {
+  constructor(scene: Phaser.Scene, private x = 18, private y = 626) {
     this.g = scene.add.graphics().setDepth(100);
     this.title = scene.add.text(x + 82, y + 7, '', { fontFamily: UI_FONT, fontSize: '19px', fontStyle: 'bold', color: '#4a3560' }).setDepth(101);
     this.streak = scene.add.text(x + 380, y + 11, '', { fontFamily: UI_FONT, fontSize: '12px', fontStyle: 'bold', color: '#ae796a' }).setOrigin(1, 0).setDepth(101);

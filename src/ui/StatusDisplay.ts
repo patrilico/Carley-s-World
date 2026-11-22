@@ -24,27 +24,27 @@ export class StatusDisplay {
   private speedText: Phaser.GameObjects.Text;
   private autoText: Phaser.GameObjects.Text;
   readonly buttons: HudButton[] = [
-    { id: 'auto', x: 1166, y: 40, r: 18 },
-    { id: 'pause', x: 1208, y: 40, r: 18 },
-    { id: 'settings', x: 1250, y: 40, r: 18 }
+    { id: 'auto', x: 1166, y: 652, r: 18 },
+    { id: 'pause', x: 1208, y: 652, r: 18 },
+    { id: 'settings', x: 1250, y: 652, r: 18 }
   ];
   hover: string | null = null;
 
   constructor(scene: Phaser.Scene) {
     this.g = scene.add.graphics().setDepth(100);
     const style = { fontFamily: UI_FONT, color: '#4a3560' };
-    this.weatherText = scene.add.text(968, 16, '', { ...style, fontSize: '16px', fontStyle: 'bold' }).setDepth(101);
-    this.timeText = scene.add.text(968, 38, '', { ...style, fontSize: '22px', fontStyle: 'bold' }).setDepth(101);
-    this.dayText = scene.add.text(968, 64, '', { ...style, fontSize: '12px', color: '#866b5e' }).setDepth(101);
-    this.autoText = scene.add.text(1166, 64, 'Auto', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: 'bold', color: '#606b79' }).setOrigin(0.5).setDepth(101);
-    this.speedText = scene.add.text(1100, 66, '', { ...style, fontSize: '12px', color: '#ae796a', fontStyle: 'bold' }).setDepth(101);
+    this.weatherText = scene.add.text(968, 628, '', { ...style, fontSize: '16px', fontStyle: 'bold' }).setDepth(101);
+    this.timeText = scene.add.text(968, 650, '', { ...style, fontSize: '22px', fontStyle: 'bold' }).setDepth(101);
+    this.dayText = scene.add.text(968, 676, '', { ...style, fontSize: '12px', color: '#866b5e' }).setDepth(101);
+    this.autoText = scene.add.text(1166, 680, 'Auto', { fontFamily: UI_FONT, fontSize: '11px', fontStyle: 'bold', color: '#606b79' }).setOrigin(0.5).setDepth(101);
+    this.speedText = scene.add.text(1100, 678, '', { ...style, fontSize: '12px', color: '#ae796a', fontStyle: 'bold' }).setDepth(101);
   }
 
   update(dt: number, sim: Simulation, time: number): void {
     const g = this.g;
     g.clear();
     const x = 868;
-    const y = 14;
+    const y = 626;
     g.fillStyle(0xfef6ef, 0.92);
     g.lineStyle(3, 0x6b5584, 1);
     g.fillRoundedRect(x, y, 266, 80, 18);

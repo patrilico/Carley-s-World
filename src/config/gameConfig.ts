@@ -16,6 +16,10 @@ export const GAME_CONFIG = {
   settingsKey: 'carleys-little-world/settings',
   saveVersion: 2,
   seed: 20261114,
+  /** The world is scrolled up this much so the HUD dock along the bottom doesn't cover anything important. */
+  worldScrollY: 70,
+  /** Top of the HUD dock (screen y). */
+  dockY: 612,
   physics: { gravity: 1500, walkSpeed: 118, runSpeed: 250, hopVy: 430 },
   limits: { maxMosquitoes: 6, maxButterflies: 8, maxSparkles: 140, maxRaindrops: 170 }
 };
