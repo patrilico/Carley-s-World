@@ -819,6 +819,12 @@ export class DogView {
     }
     pen.stroke(top, 1.9, LASH);
   }
+
+  destroy(): void {
+    this.g.destroy();
+    this.shadow.destroy();
+    for (const z of this.zs) z.destroy();
+  }
 }
 
 const ptXY = (p: P2): [number, number] => [p.x, p.y];
