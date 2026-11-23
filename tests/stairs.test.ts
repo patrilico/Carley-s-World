@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeSim, runUntil } from './helpers';
-import { FLOOR_Y, SOLIDS, STAIRS, UPPER_MAX_X, UPPER_Y, navStep, planeRange, stairsYAt, standableX, surfaceYAt } from '../src/config/worldLayout';
+import { BED_STATE, FLOOR_Y, SOLIDS, STAIRS, UPPER_MAX_X, UPPER_Y, navStep, planeRange, stairsYAt, standableX, surfaceYAt } from '../src/config/worldLayout';
 import { SaveSystem } from '../src/systems/SaveSystem';
 import type { Plane } from '../src/core/types';
 
@@ -56,7 +56,10 @@ describe('stairs: layout geometry', () => {
   it('floors have the right surface heights and the bed sits on the upper one', () => {
     expect(surfaceYAt(300, 'ground')).toBe(FLOOR_Y);
     expect(surfaceYAt(300, 'upper')).toBe(UPPER_Y);
+    expect(surfaceYAt(100, 'upper')).toBe(UPPER_Y); // she walks in front of the bed...
+    BED_STATE.active = true; // ...and only climbs onto it to sleep
     expect(surfaceYAt(100, 'upper')).toBeLessThan(UPPER_Y); // bed top
+    BED_STATE.active = false;
     expect(surfaceYAt(100, 'ground')).toBe(FLOOR_Y); // nothing on the ground floor beneath the bed
     for (const x of [40, 100, 190, 250]) expect(surfaceYAt(standableX(x, 'upper'), 'upper')).toBe(UPPER_Y);
   });
